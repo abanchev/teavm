@@ -125,11 +125,11 @@ public final class TMath extends TObject {
     public static native double atan2(double y, double x);
 
     public static int round(float a) {
-        return (int) (a + signum(a) * 0.5f);
+        return (int) floor(a + 0.5f);
     }
 
     public static long round(double a) {
-        return (long) (a + signum(a) * 0.5);
+        return (long) floor(a + 0.5);
     }
 
     public static int floorDiv(int a, int b) {

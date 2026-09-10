@@ -127,6 +127,42 @@ public class MathTest {
         assertEquals(-2, Math.round(-1.8));
     }
 
+    /**
+     * Ties round to positive infinity, not away from zero, so -0.5, -1.5 and -2.5 round toward zero
+     * while their positive counterparts round away from it. {@link #roundWorks} covers only non-tie
+     * values and agrees with both conventions.
+     */
+    @Test
+    public void roundTiesGoToPositiveInfinity() {
+        assertEquals(0, Math.round(-0.5));
+        assertEquals(-1, Math.round(-1.5));
+        assertEquals(-2, Math.round(-2.5));
+        assertEquals(1, Math.round(0.5));
+        assertEquals(2, Math.round(1.5));
+        assertEquals(3, Math.round(2.5));
+
+        assertEquals(0L, Math.round(-0.5d));
+        assertEquals(-1L, Math.round(-1.5d));
+        assertEquals(-2L, Math.round(-2.5d));
+        assertEquals(1L, Math.round(0.5d));
+        assertEquals(2L, Math.round(1.5d));
+        assertEquals(3L, Math.round(2.5d));
+    }
+
+    @Test
+    public void roundSaturatesAndHandlesNonFiniteValues() {
+        assertEquals(Integer.MAX_VALUE, Math.round(Float.POSITIVE_INFINITY));
+        assertEquals(Integer.MIN_VALUE, Math.round(Float.NEGATIVE_INFINITY));
+        assertEquals(0, Math.round(Float.NaN));
+
+        assertEquals(Long.MAX_VALUE, Math.round(Double.POSITIVE_INFINITY));
+        assertEquals(Long.MIN_VALUE, Math.round(Double.NEGATIVE_INFINITY));
+        assertEquals(0L, Math.round(Double.NaN));
+
+        assertEquals(Long.MAX_VALUE, Math.round(1e30));
+        assertEquals(Long.MIN_VALUE, Math.round(-1e30));
+    }
+
     @Test
     public void nextWorks() {
         sameDouble(-Double.MIN_VALUE, Math.nextDown(0.0));
