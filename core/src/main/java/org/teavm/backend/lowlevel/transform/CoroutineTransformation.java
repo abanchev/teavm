@@ -83,6 +83,7 @@ public class CoroutineTransformation {
     private int parameterCount;
     private ValueType returnType;
     private boolean hasThreads;
+    private int entryContinuationIndex;
 
     public CoroutineTransformation(ClassReaderSource classSource, Set<MethodReference> asyncMethods,
             boolean hasThreads) {
@@ -135,6 +136,7 @@ public class CoroutineTransformation {
 
         BasicBlock firstBlock = program.basicBlockAt(0);
         BasicBlock continueBlock = splitter.split(firstBlock, null);
+        entryContinuationIndex = continueBlock.getIndex();
         BasicBlock switchStateBlock = program.createBasicBlock();
         TextLocation location = continueBlock.getFirstInstruction().getLocation();
 
@@ -191,7 +193,8 @@ public class CoroutineTransformation {
             return Collections.emptyMap();
         }
 
-        BitSet live = livenessAnalysis.liveOut(block.getIndex());
+        // The prologue moved original block zero into a newly appended block after analysis.
+        BitSet live = livenessAnalysis.liveOut(block.getIndex() == entryContinuationIndex ? 0 : block.getIndex());
 
         Map<Instruction, BitSet> result = new LinkedHashMap<>();
         UsageExtractor use = new UsageExtractor();
