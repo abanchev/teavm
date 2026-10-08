@@ -6,9 +6,9 @@
  */
 package org.teavm.vm;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.Assert.assertEquals;
 
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 import org.teavm.model.instructions.ArrayElementType;
 import org.teavm.model.BasicBlock;
 import org.teavm.model.Incoming;
@@ -87,6 +87,6 @@ public class PrimitiveArrayTypeInferenceTest {
         TypeInferer inferer = new TypeInferer();
         inferer.inferTypes(program, new MethodReference("Example", "read",
                 ValueType.arrayOf(type), ValueType.BOOLEAN, type));
-        assertEquals(expected, inferer.typeOf(6), element.toString());
+        assertEquals(element.toString(), expected, inferer.typeOf(6));
     }
 }
