@@ -125,11 +125,25 @@ public final class TMath extends TObject {
     public static native double atan2(double y, double x);
 
     public static int round(float a) {
-        return (int) (a + signum(a) * 0.5f);
+        // float to double conversion is exact, and so is the rest of computation in double
+        return (int) roundToDouble(a);
     }
 
     public static long round(double a) {
-        return (long) (a + signum(a) * 0.5);
+        return (long) roundToDouble(a);
+    }
+
+    /**
+     * Computes floor(a + 0.5) without intermediate rounding of a + 0.5. a - floor(a) is either exact
+     * or, for a in (-0.5, 0), rounds to value that's still greater or equal than 0.5. NaN and infinities
+     * are preserved, so that subsequent conversion to integer type maps them properly.
+     */
+    private static double roundToDouble(double a) {
+        double result = floor(a);
+        if (a - result >= 0.5) {
+            result += 1;
+        }
+        return result;
     }
 
     public static int floorDiv(int a, int b) {
