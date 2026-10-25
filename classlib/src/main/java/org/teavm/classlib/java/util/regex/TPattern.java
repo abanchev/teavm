@@ -429,6 +429,15 @@ public final class TPattern implements Serializable {
         if (lexemes.back() == TLexer.CHAR_VERTICAL_BAR) {
             children.add(new TEmptySet(fSet));
         }
+        TAbstractSet alternativesMachine = TStateMachineSet.createAlternatives(children, fSet);
+        if (alternativesMachine != null) {
+            children.clear();
+            children.add(alternativesMachine);
+        } else {
+            for (int i = 0; i < children.size(); ++i) {
+                children.set(i, createStateMachines(children.get(i), fSet));
+            }
+        }
 
         if (flags != saveFlags && !saveChangedFlags) {
             flags = saveFlags;
@@ -466,6 +475,29 @@ public final class TPattern implements Serializable {
                         return new TJointSet(children, fSet);
                 }
         }
+    }
+
+    /**
+     * Replaces parts of chain of nodes that starts with {@code first} and ends before {@code end}
+     * with state machines. Returns new first node.
+     */
+    private TAbstractSet createStateMachines(TAbstractSet first, TAbstractSet end) {
+        TAbstractSet previous = null;
+        TAbstractSet node = first;
+        while (node != null && node != end) {
+            TAbstractSet machine = TStateMachineSet.create(node, end);
+            if (machine != null) {
+                if (previous == null) {
+                    first = machine;
+                } else {
+                    previous.setNext(machine);
+                }
+                node = machine;
+            }
+            previous = node;
+            node = node.getNext();
+        }
+        return first;
     }
 
     /**
@@ -662,18 +694,8 @@ public final class TPattern implements Serializable {
             switch (quant) {
                 case TLexer.QUANT_STAR:
                 case TLexer.QUANT_PLUS: {
-                    TQuantifierSet q;
-
                     lexemes.next();
-                    if (term.getType() == TAbstractSet.TYPE_DOTSET) {
-                        if (!hasFlag(TPattern.DOTALL)) {
-                            q = new TDotQuantifierSet(term, last, quant, TAbstractLineTerminator.getInstance(flags));
-                        } else {
-                            q = new TDotAllQuantifierSet(term, last, quant);
-                        }
-                    } else {
-                        q = new TGroupQuantifierSet(term, last, quant);
-                    }
+                    TQuantifierSet q = new TGroupQuantifierSet(term, last, quant);
                     term.setNext(q);
                     return q;
                 }
@@ -750,7 +772,16 @@ public final class TPattern implements Serializable {
                 case TLexer.QUANT_STAR:
                 case TLexer.QUANT_PLUS: {
                     lexemes.next();
-                    TLeafQuantifierSet q = new TLeafQuantifierSet(leaf, last, quant);
+                    TQuantifierSet q;
+                    if (leaf.getType() == TAbstractSet.TYPE_DOTSET) {
+                        if (!hasFlag(TPattern.DOTALL)) {
+                            q = new TDotQuantifierSet(leaf, last, quant, TAbstractLineTerminator.getInstance(flags));
+                        } else {
+                            q = new TDotAllQuantifierSet(leaf, last, quant);
+                        }
+                    } else {
+                        q = new TLeafQuantifierSet(leaf, last, quant);
+                    }
                     leaf.setNext(q);
                     return q;
                 }

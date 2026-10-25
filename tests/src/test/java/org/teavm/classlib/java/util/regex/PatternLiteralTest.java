@@ -78,6 +78,9 @@ public class PatternLiteralTest {
         check(Pattern.compile("a\\B"), "a\\B");
         check(Pattern.compile(".+"), ".+");
         check(Pattern.compile("(?s).+"), "(?s).+");
+        check(Pattern.compile("a.*?a"), "a.*?a");
+        check(Pattern.compile("(?s)l.+?\\d"), "(?s)l.+?\\d");
+        check(Pattern.compile("[^a-z ]*?\\d"), "[^a-z ]*?\\d");
         check(Pattern.compile("\\Aa|c\\z"), "\\Aa|c\\z");
         check(Pattern.compile("\\Ga"), "\\Ga");
         check(Pattern.compile("[\\p{L}]+"), "[\\p{L}]+");
@@ -91,6 +94,15 @@ public class PatternLiteralTest {
         check(Pattern.compile("(a)|(b)"), "(a)|(b)");
         check(Pattern.compile("(\\w)\\1"), "(\\w)\\1");
         check(Pattern.compile("\\p{javaLowerCase}+"), "\\p{javaLowerCase}+");
+        check(Pattern.compile("[a-z]+[0-9]+"), "[a-z]+[0-9]+");
+        check(Pattern.compile("[a-z]+[a-c]\\d"), "[a-z]+[a-c]\\d");
+        check(Pattern.compile("\\d+\\.\\d+"), "\\d+\\.\\d+");
+        check(Pattern.compile("[^,]+,"), "[^,]+,");
+        check(Pattern.compile("[\\w.]+@[^@\\s]+\\.com"), "[\\w.]+@[^@\\s]+\\.com");
+        check(Pattern.compile("foo|bar|baz\\d"), "foo|bar|baz\\d");
+        check(Pattern.compile("(?:a|ab)c"), "(?:a|ab)c");
+        check(Pattern.compile("\\d{2,4}-[a-z]+?\\b"), "\\d{2,4}-[a-z]+?\\b");
+        check(Pattern.compile("[a-z]*+\\d?+x"), "[a-z]*+\\d?+x");
     }
 
     @Test

@@ -825,4 +825,53 @@ public class ByteBufferTest {
         buffer.get(check);
         assertArrayEquals(new byte[] { 2 }, check);
     }
+  
+    @Test
+    public void absoluteLongAccessKeepsPosition() {
+        for (ByteBuffer buffer : new ByteBuffer[] { ByteBuffer.allocate(16), ByteBuffer.allocateDirect(16) }) {
+            buffer.putLong(8, 0x0102030405060708L);
+            buffer.position(3);
+            assertEquals(0x0102030405060708L, buffer.getLong(8));
+            assertEquals(3, buffer.position());
+            buffer.getDouble(8);
+            assertEquals(3, buffer.position());
+        }
+    }
+
+    @Test
+    public void absolutePutLongChecksAllEightBytes() {
+        for (ByteBuffer buffer : new ByteBuffer[] { ByteBuffer.allocate(16), ByteBuffer.allocateDirect(16) }) {
+            buffer.putLong(8, 0x1122334455667788L);
+            buffer.limit(12);
+            try {
+                buffer.putLong(8, -1L);
+                fail("Exception expected");
+            } catch (IndexOutOfBoundsException e) {
+                // expected
+            }
+            buffer.limit(16);
+            assertEquals(0x1122334455667788L, buffer.getLong(8));
+        }
+    }
+
+    @Test
+    public void allocateDirectZeroFills() {
+        var buffers = new ByteBuffer[64];
+        for (int i = 0; i < buffers.length; ++i) {
+            buffers[i] = ByteBuffer.allocateDirect(1 + i * 7);
+            buffers[i].put(0, (byte) -1);
+        }
+        for (int i = 0; i < buffers.length; i += 2) {
+            buffers[i] = null;
+        }
+        for (int round = 0; round < 4; ++round) {
+            for (int i = 0; i < buffers.length; ++i) {
+                ByteBuffer buffer = ByteBuffer.allocateDirect(1 + i * 5);
+                for (int j = 0; j < buffer.capacity(); ++j) {
+                    assertEquals(0, buffer.get(j), "byte " + j + " of buffer " + i + " in round " + round);
+                }
+                buffer.put(0, (byte) -1);
+            }
+        }
+    }
 }
