@@ -195,6 +195,14 @@ public class FileInputStreamTest {
     }
 
     @Test
+    public void skipZeroDoesNotConsumeFirstByte() throws IOException {
+        try (InputStream in = new FileInputStream(fileName)) {
+            assertEquals(0, in.skip(0));
+            assertEquals(fileString.charAt(0), in.read());
+        }
+    }
+
+    @Test
     public void read$B() throws IOException {
         byte[] buf1 = new byte[100];
         is = new FileInputStream(fileName);
