@@ -82,4 +82,26 @@ public class ObjectTest {
         long end = System.currentTimeMillis();
         assertTrue(end - start > 100);
     }
+
+    @Test
+    public void monitorSurvivesGarbageCollection() {
+        assertNotNull(Thread.currentThread());
+        Object[] locks = { new Object(), new int[1], new Object[1] };
+        for (Object lock : locks) {
+            int identity = System.identityHashCode(lock);
+            synchronized (lock) {
+                assertTrue(Thread.holdsLock(lock));
+                System.gc();
+                byte[][] allocations = new byte[64][];
+                for (int i = 0; i < allocations.length; i++) {
+                    allocations[i] = new byte[64];
+                    allocations[i][0] = (byte) i;
+                }
+                assertTrue(Thread.holdsLock(lock), "collection must preserve monitor ownership");
+                assertEquals(identity, System.identityHashCode(lock));
+                assertEquals(63, allocations[63][0]);
+            }
+            assertEquals(identity, System.identityHashCode(lock));
+        }
+    }
 }

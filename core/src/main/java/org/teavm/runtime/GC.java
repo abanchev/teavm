@@ -419,12 +419,23 @@ public final class GC {
     }
 
     private static boolean markObjectData(RuntimeObject object) {
+        boolean hasObjectsFromYoungGen = enqueueMark(getMonitor(object));
         RuntimeClass cls = RuntimeClass.getClass(object);
         if (cls.itemType == null) {
-            return markObject(cls, object);
+            hasObjectsFromYoungGen |= markObject(cls, object);
         } else {
-            return markArray(cls, (RuntimeArray) object);
+            hasObjectsFromYoungGen |= markArray(cls, (RuntimeArray) object);
         }
+        return hasObjectsFromYoungGen;
+    }
+
+    private static RuntimeObject getMonitor(RuntimeObject object) {
+        // C stores the monitor in the tagged hash header, outside the ordinary field layout.
+        // Its payload is an offset from the heap base in four-byte units (TEAVM_PACK_MONITOR).
+        if (PlatformDetector.isC() && object.hashCode < 0) {
+            return heapAddress().add((object.hashCode & 0x7FFFFFFFL) * 4).toStructure();
+        }
+        return null;
     }
 
     private static boolean markObject(RuntimeClass cls, RuntimeObject object) {
@@ -1109,6 +1120,11 @@ public final class GC {
     }
 
     private static void updatePointers(RuntimeClass cls, RuntimeObject object) {
+        RuntimeObject monitor = getMonitor(object);
+        if (monitor != null) {
+            Address relocated = updatePointer(monitor.toAddress());
+            object.hashCode = (int) (relocated.diff(heapAddress()) / 4) | 0x80000000;
+        }
         if (cls.itemType == null) {
             updatePointersInObject(cls, object);
         } else {
