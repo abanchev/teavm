@@ -165,6 +165,36 @@ public class FileInputStreamTest {
     }
 
     @Test
+    public void readReturnsUnsignedBytesAndDistinctEndOfStream() throws IOException {
+        try (OutputStream out = new FileOutputStream(fileName)) {
+            out.write(new byte[] { 0, 127, (byte) 128, (byte) 254, (byte) 255 });
+        }
+        try (InputStream in = new FileInputStream(fileName)) {
+            assertEquals(0, in.read());
+            assertEquals(127, in.read());
+            assertEquals(128, in.read());
+            assertEquals(254, in.read());
+            assertEquals(255, in.read());
+            assertEquals(-1, in.read());
+        }
+    }
+
+    @Test
+    public void skipAdvancesFromCurrentPosition() throws IOException {
+        try (OutputStream out = new FileOutputStream(fileName)) {
+            out.write(new byte[] { 10, 11, 12, 13, 14, 15, 16 });
+        }
+        try (InputStream in = new FileInputStream(fileName)) {
+            assertEquals(10, in.read());
+            assertEquals(2, in.skip(2));
+            assertEquals(13, in.read());
+            assertEquals(2, in.skip(2));
+            assertEquals(16, in.read());
+            assertEquals(-1, in.read());
+        }
+    }
+
+    @Test
     public void read$B() throws IOException {
         byte[] buf1 = new byte[100];
         is = new FileInputStream(fileName);
