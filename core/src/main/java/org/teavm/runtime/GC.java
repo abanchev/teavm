@@ -419,7 +419,7 @@ public final class GC {
     }
 
     private static boolean markObjectData(RuntimeObject object) {
-        boolean hasObjectsFromYoungGen = enqueueMark(getMonitor(object));
+        boolean hasObjectsFromYoungGen = enqueueMark(getMonitor(object.hashCode));
         RuntimeClass cls = RuntimeClass.getClass(object);
         if (cls.itemType == null) {
             hasObjectsFromYoungGen |= markObject(cls, object);
@@ -429,11 +429,11 @@ public final class GC {
         return hasObjectsFromYoungGen;
     }
 
-    private static RuntimeObject getMonitor(RuntimeObject object) {
+    private static RuntimeObject getMonitor(int hashCode) {
         // C stores the monitor in the tagged hash header, outside the ordinary field layout.
         // Its payload is an offset from the heap base in four-byte units (TEAVM_PACK_MONITOR).
-        if (PlatformDetector.isC() && object.hashCode < 0) {
-            return heapAddress().add((object.hashCode & 0x7FFFFFFFL) * 4).toStructure();
+        if (PlatformDetector.isC() && hashCode < 0) {
+            return heapAddress().add((hashCode & 0x7FFFFFFFL) * 4).toStructure();
         }
         return null;
     }
@@ -1120,10 +1120,20 @@ public final class GC {
     }
 
     private static void updatePointers(RuntimeClass cls, RuntimeObject object) {
-        RuntimeObject monitor = getMonitor(object);
-        if (monitor != null) {
-            Address relocated = updatePointer(monitor.toAddress());
-            object.hashCode = (int) (relocated.diff(heapAddress()) / 4) | 0x80000000;
+        if (PlatformDetector.isC()) {
+            // Relocatable objects temporarily carry a forwarding record in both header words.
+            // The record's sizeBackup holds the original hash/monitor word until restoration.
+            Relocation relocation = getRelocation(object.toAddress());
+            RuntimeObject monitor = getMonitor(relocation != null ? relocation.sizeBackup : object.hashCode);
+            if (monitor != null) {
+                Address relocated = updatePointer(monitor.toAddress());
+                int hashCode = (int) (relocated.diff(heapAddress()) / 4) | 0x80000000;
+                if (relocation != null) {
+                    relocation.sizeBackup = hashCode;
+                } else {
+                    object.hashCode = hashCode;
+                }
+            }
         }
         if (cls.itemType == null) {
             updatePointersInObject(cls, object);
