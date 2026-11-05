@@ -194,6 +194,21 @@ public class DoubleTest {
     }
 
     @Test
+    public void doubleToLongBitsCanonicalizesOnlyNaN() {
+        long[] nans = { 0x7ff0000000000001L, 0x7ff7ffffffffffffL, 0x7ff8000000000000L, 0x7fffffffffffffffL,
+                0xfff0000000000001L, 0xfff8000000000000L, 0xffffffffffffffffL, 0x7ff0000100000000L };
+        for (long bits : nans) {
+            assertEquals(0x7ff8000000000000L, Double.doubleToLongBits(Double.longBitsToDouble(bits)));
+        }
+        long[] numbers = { 0, 0x8000000000000000L, 1, 0x8000000000000001L, 0x000fffffffffffffL, 0x0010000000000000L,
+                0x3ff0000000000000L, 0xbff0000000000000L, 0x7fefffffffffffffL, 0xffefffffffffffffL,
+                0x7ff0000000000000L, 0xfff0000000000000L };
+        for (long bits : numbers) {
+            assertEquals(bits, Double.doubleToLongBits(Double.longBitsToDouble(bits)));
+        }
+    }
+
+    @Test
     public void testFinity() {
         assertTrue(Double.isFinite(1d));
         assertFalse(Double.isInfinite(1d));

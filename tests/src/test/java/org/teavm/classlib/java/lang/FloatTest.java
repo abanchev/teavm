@@ -175,6 +175,19 @@ public class FloatTest {
     }
 
     @Test
+    public void floatToIntBitsCanonicalizesOnlyNaN() {
+        int[] nans = { 0x7f800001, 0x7fbfffff, 0x7fc00000, 0x7fffffff, 0xff800001, 0xffc00000, 0xffffffff };
+        for (int bits : nans) {
+            assertEquals(0x7fc00000, Float.floatToIntBits(Float.intBitsToFloat(bits)));
+        }
+        int[] numbers = { 0, 0x80000000, 1, 0x80000001, 0x007fffff, 0x00800000, 0x3f800000, 0xbf800000, 0x7f7fffff,
+                0xff7fffff, 0x7f800000, 0xff800000 };
+        for (int bits : numbers) {
+            assertEquals(bits, Float.floatToIntBits(Float.intBitsToFloat(bits)));
+        }
+    }
+
+    @Test
     public void testFinity() {
         assertTrue(Float.isFinite(1f));
         assertFalse(Float.isInfinite(1f));
