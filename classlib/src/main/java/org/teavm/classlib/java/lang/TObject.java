@@ -218,7 +218,8 @@ public class TObject {
             if (PlatformDetector.isC() && spareMonitor == null) {
                 // isEmptyMonitor has established that there is no owner or waiter.
                 released.enteringThreads = null;
-                released.notifyListeners = null;
+                released.firstNotifyListener = null;
+                released.lastNotifyListener = null;
                 released.count = 0;
                 released.id = 0;
                 spareMonitor = released;
