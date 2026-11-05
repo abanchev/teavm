@@ -1106,23 +1106,17 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
 
         pushLocation(expr.getLocation());
 
-        boolean needParenthesis = false;
-        if (needsCallSiteId()) {
-            needParenthesis = true;
-            withCallSite();
-        }
-
-        writer.print("teavm_checkcast(");
+        boolean atSite = needsCallSiteId();
+        writer.print(atSite ? "teavm_checkcastAt(" : "teavm_checkcast(");
         visitReference(expr.getValue());
         writer.print(", ");
         CodeGeneratorUtil.writeTypeReference(writer, context, includes, expr.getTarget());
         writer.print(", ");
         CodeGeneratorUtil.writeIsSupertypeFunctionRef(writer, context, includes, expr.getTarget());
-        writer.print(")");
-
-        if (needParenthesis) {
-            writer.print(")");
+        if (atSite) {
+            writer.print(", TEAVM_CALL_SITE_PTR, ").print(String.valueOf(addCallSite()));
         }
+        writer.print(")");
 
         popLocation(expr.getLocation());
     }
