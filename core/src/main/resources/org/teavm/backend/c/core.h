@@ -173,7 +173,9 @@ static inline void teavm_initializeClass(TeaVM_Class* cls, void (*initializer)()
 #define TEAVM_FIELD(ptr, type, name) (TEAVM_AS(ptr, type)->name)
 #define TEAVM_ALIGN(addr, alignment) ((void*) (((uintptr_t) (addr) + ((alignment) - 1)) / (alignment) * (alignment)))
 #define TEAVM_ARRAY_LENGTH(array) (((TeaVM_Array*) (array))->size)
-#define TEAVM_ARRAY_DATA(array, type) ((type*) TEAVM_ALIGN((((TeaVM_Array*) (array)) + 1), sizeof(type)))
+// Heap objects are 8-aligned, so the data offset is a constant for every element size up to 8.
+#define TEAVM_ARRAY_DATA(array, type) ((type*) ((char*) (array) \
+        + (sizeof(TeaVM_Array) + sizeof(type) - 1) / sizeof(type) * sizeof(type)))
 #define TEAVM_ARRAY_DATAN(array, type) (array != NULL ? TEAVM_ARRAY_DATA(array, type) : NULL)
 #define TEAVM_ARRAY_AT(array, type, index) (((type*) TEAVM_ARRAY_DATA(array, type))[index])
 #define TEAVM_ADDRESS_ADD(address, offset) ((char *) (address) + (offset))
@@ -223,15 +225,33 @@ static inline int64_t teavm_saturateToLong(double v) {
 static inline int32_t teavm_doubleToInt(double v) {
     return fabs(v) < 2147483648.0 ? (int32_t) v : teavm_saturateToInt(v);
 }
+// Without an FPU, a range check on the bits avoids a library compare for every conversion.
+#ifdef __SOFTFP__
+static inline uint32_t teavm_floatMagnitudeBits(float v) {
+    union { float f; uint32_t i; } bits;
+    bits.f = v;
+    return bits.i & UINT32_C(0x7FFFFFFF);
+}
+static inline int32_t teavm_floatToInt(float v) {
+    return teavm_floatMagnitudeBits(v) < UINT32_C(0x4F000000) ? (int32_t) v : teavm_saturateToInt(v);
+}
+#else
 static inline int32_t teavm_floatToInt(float v) {
     return fabsf(v) < 2147483648.0f ? (int32_t) v : teavm_saturateToInt(v);
 }
+#endif
 static inline int64_t teavm_doubleToLong(double v) {
     return fabs(v) < 9223372036854775808.0 ? (int64_t) v : teavm_saturateToLong(v);
 }
+#ifdef __SOFTFP__
+static inline int64_t teavm_floatToLong(float v) {
+    return teavm_floatMagnitudeBits(v) < UINT32_C(0x5F000000) ? (int64_t) v : teavm_saturateToLong(v);
+}
+#else
 static inline int64_t teavm_floatToLong(float v) {
     return fabsf(v) < 9223372036854775808.0f ? (int64_t) v : teavm_saturateToLong(v);
 }
+#endif
 
 static inline int32_t teavm_instanceof(void* obj, void* cls, int32_t (*fn)(TeaVM_Class*,TeaVM_Class*)) {
     return obj != NULL && fn((TeaVM_Class*) cls, TEAVM_CLASS_OF(obj));

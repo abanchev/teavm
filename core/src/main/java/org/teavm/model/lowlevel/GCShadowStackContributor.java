@@ -103,8 +103,27 @@ public class GCShadowStackContributor {
         List<Map<Instruction, int[]>> liveInStores = reduceGCRootStores(dom, program, usedColors, liveInInformation,
                 colors, autoSpilled, variableClasses);
         putLiveInGCRoots(program, liveInStores);
+        clearSlots(program, usedColors);
 
         return usedColors;
+    }
+
+    private void clearSlots(Program program, int slots) {
+        List<Instruction> instructions = new ArrayList<>();
+        for (int slot = 0; slot < slots; ++slot) {
+            Variable slotVar = program.createVariable();
+            IntegerConstantInstruction slotConstant = new IntegerConstantInstruction();
+            slotConstant.setReceiver(slotVar);
+            slotConstant.setConstant(slot);
+            instructions.add(slotConstant);
+
+            InvokeInstruction release = new InvokeInstruction();
+            release.setType(InvocationType.SPECIAL);
+            release.setMethod(new MethodReference(ShadowStack.class, "removeGCRoot", int.class, void.class));
+            release.setArguments(slotVar);
+            instructions.add(release);
+        }
+        program.basicBlockAt(0).addFirstAll(instructions);
     }
 
     private int[] getVariableClasses(Program program) {
@@ -160,7 +179,8 @@ public class GCShadowStackContributor {
                 for (Variable definedVar : defExtractor.getDefinedVariables()) {
                     currentLiveOut.clear(definedVar.getIndex());
                 }
-                if (ExceptionHandlingUtil.isCallInstruction(characteristics, insn)) {
+                if (ExceptionHandlingUtil.isCallInstruction(characteristics, insn)
+                        && !(ExceptionHandlingUtil.isCheckInstruction(insn) && block.getTryCatchBlocks().isEmpty())) {
                     BitSet csLiveIn = (BitSet) currentLiveOut.clone();
                     for (int v = csLiveIn.nextSetBit(0); v >= 0; v = csLiveIn.nextSetBit(v + 1)) {
                         if (!isReference(typeInferer, v) || nativePointers[v] || constants.get(v)) {
@@ -236,8 +256,9 @@ public class GCShadowStackContributor {
 
         Step[] stack = new Step[program.basicBlockCount() * 2];
         int head = 0;
+        // A failing check can reach the GC before the first call site, so every slot starts out null.
         Step start = new Step(0);
-        Arrays.fill(start.slotStates, program.variableCount());
+        Arrays.fill(start.slotStates, -1);
         stack[head++] = start;
 
         while (head > 0) {

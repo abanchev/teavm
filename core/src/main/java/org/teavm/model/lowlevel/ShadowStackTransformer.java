@@ -56,7 +56,9 @@ public class ShadowStackTransformer {
                 break;
             }
             for (Instruction insn : block) {
-                if (ExceptionHandlingUtil.isCallInstruction(characteristics, insn)) {
+                // A check with no handler in this method leaves its frame unused: the caller's frame takes the throw.
+                if (ExceptionHandlingUtil.isCallInstruction(characteristics, insn)
+                        && !ExceptionHandlingUtil.isCheckInstruction(insn)) {
                     exceptions = true;
                     break outer;
                 }

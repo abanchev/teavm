@@ -147,18 +147,16 @@ public final class ExceptionHandling {
         }
     }
 
-    @Unmanaged
+    // Managed, so a collection during the constructor moves the new exception together with its root.
     public static void throwClassCastException() {
         throwException(new ClassCastException());
     }
 
-    @Unmanaged
     @Export(name = "teavm_throwNullPointerException")
     public static void throwNullPointerException() {
         throwException(new NullPointerException());
     }
 
-    @Unmanaged
     @Export(name = "teavm_throwArrayIndexOutOfBoundsException")
     public static void throwArrayIndexOutOfBoundsException() {
         throwException(new ArrayIndexOutOfBoundsException());
