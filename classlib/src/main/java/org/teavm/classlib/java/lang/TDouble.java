@@ -313,10 +313,8 @@ public class TDouble extends TNumber implements TComparable<TDouble> {
     public static native long doubleToRawLongBits(double value);
 
     public static long doubleToLongBits(double value) {
-        if (isNaN(value)) {
-            return 0x7ff8000000000000L;
-        }
-        return doubleToRawLongBits(value);
+        var bits = doubleToRawLongBits(value);
+        return (bits & Long.MAX_VALUE) > 0x7ff0000000000000L ? 0x7ff8000000000000L : bits;
     }
 
     @InjectedBy(DoubleGenerator.class)

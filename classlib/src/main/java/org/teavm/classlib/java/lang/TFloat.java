@@ -281,10 +281,8 @@ public class TFloat extends TNumber implements TComparable<TFloat> {
     public static native int floatToRawIntBits(float value);
 
     public static int floatToIntBits(float value) {
-        if (isNaN(value)) {
-            return 0x7fc00000;
-        }
-        return floatToRawIntBits(value);
+        var bits = floatToRawIntBits(value);
+        return (bits & 0x7fffffff) > 0x7f800000 ? 0x7fc00000 : bits;
     }
 
     @JSBody(params = "bits", script = "return $rt_intBitsToFloat(bits);")
