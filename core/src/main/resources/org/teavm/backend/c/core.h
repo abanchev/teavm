@@ -260,6 +260,14 @@ static inline int32_t teavm_instanceof(void* obj, void* cls, int32_t (*fn)(TeaVM
 static inline void* teavm_checkcast(void* obj, void* cls, int32_t (*fn)(TeaVM_Class*,TeaVM_Class*)) {
     return obj == NULL || fn((TeaVM_Class*) cls, TEAVM_CLASS_OF(obj)) ? obj : teavm_throwClassCastException();
 }
+static inline void* teavm_checkcastAt(void* obj, void* cls, int32_t (*fn)(TeaVM_Class*,TeaVM_Class*),
+        int32_t* site, int32_t id) {
+    if (obj == NULL || fn((TeaVM_Class*) cls, TEAVM_CLASS_OF(obj))) {
+        return obj;
+    }
+    *site = id;
+    return teavm_throwClassCastException();
+}
 
 extern double teavm_rand();
 
