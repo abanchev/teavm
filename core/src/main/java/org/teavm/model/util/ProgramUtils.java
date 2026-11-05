@@ -15,8 +15,10 @@
  */
 package org.teavm.model.util;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -73,6 +75,46 @@ public final class ProgramUtils {
         return graphBuilder.build();
     }
 
+
+    /**
+     * Removes phis that only feed other phis. Such a phi can read a variable that no path assigned, so nothing
+     * may save it: neither a GC root nor a coroutine's state.
+     */
+    public static void removeDeadPhis(Program program) {
+        var phiByReceiver = new Phi[program.variableCount()];
+        var used = new BitSet(program.variableCount());
+        var worklist = new ArrayDeque<Variable>();
+        var useExtractor = new UsageExtractor();
+        for (var block : program.getBasicBlocks()) {
+            for (var phi : block.getPhis()) {
+                phiByReceiver[phi.getReceiver().getIndex()] = phi;
+            }
+            for (var insn : block) {
+                insn.acceptVisitor(useExtractor);
+                for (var variable : useExtractor.getUsedVariables()) {
+                    if (!used.get(variable.getIndex())) {
+                        used.set(variable.getIndex());
+                        worklist.add(variable);
+                    }
+                }
+            }
+        }
+        while (!worklist.isEmpty()) {
+            var phi = phiByReceiver[worklist.remove().getIndex()];
+            if (phi != null) {
+                for (var incoming : phi.getIncomings()) {
+                    var value = incoming.getValue();
+                    if (!used.get(value.getIndex())) {
+                        used.set(value.getIndex());
+                        worklist.add(value);
+                    }
+                }
+            }
+        }
+        for (var block : program.getBasicBlocks()) {
+            block.getPhis().removeIf(phi -> !used.get(phi.getReceiver().getIndex()));
+        }
+    }
 
     public static Graph buildControlFlowGraph2(Program program) {
         var graphBuilder = new GraphBuilder(program.basicBlockCount());
