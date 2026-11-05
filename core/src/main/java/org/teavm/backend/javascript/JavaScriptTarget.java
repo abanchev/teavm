@@ -47,6 +47,8 @@ import org.teavm.backend.javascript.codegen.OutputSourceWriterBuilder;
 import org.teavm.backend.javascript.codegen.RememberedSource;
 import org.teavm.backend.javascript.codegen.RememberingSourceWriter;
 import org.teavm.backend.javascript.codegen.SourceWriter;
+import org.teavm.backend.javascript.intrinsics.eventqueue.EventQueueDependencyListener;
+import org.teavm.backend.javascript.intrinsics.eventqueue.EventQueueGenerator;
 import org.teavm.backend.javascript.intrinsics.ref.ReferenceQueueGenerator;
 import org.teavm.backend.javascript.intrinsics.ref.ReferenceQueueTransformer;
 import org.teavm.backend.javascript.intrinsics.ref.WeakReferenceDependencyListener;
@@ -173,6 +175,10 @@ public class JavaScriptTarget implements TeaVMTarget, TeaVMJavaScriptHost {
         var refQueueGenerator = new ReferenceQueueGenerator();
         methodGenerators.put(new MethodReference(ReferenceQueue.class, "<init>", void.class), refQueueGenerator);
         methodGenerators.put(new MethodReference(ReferenceQueue.class, "poll", Reference.class), refQueueGenerator);
+
+        var eventQueueGenerator = new EventQueueGenerator(templateFactory);
+        methodGenerators.put(EventQueueGenerator.OFFER, eventQueueGenerator);
+        methodGenerators.put(EventQueueGenerator.KILL, eventQueueGenerator);
     }
 
     @Override
@@ -283,11 +289,7 @@ public class JavaScriptTarget implements TeaVMTarget, TeaVMJavaScriptHost {
         exceptionCons.use();
 
         if (strict) {
-            exceptionCons = dependencyAnalyzer.linkMethod(new MethodReference(
-                    ArrayIndexOutOfBoundsException.class, "<init>", void.class));
-            exceptionCons.getVariable(0).propagate(dependencyAnalyzer.getClassType(
-                    ArrayIndexOutOfBoundsException.class.getName()));
-            exceptionCons.use();
+            BoundCheckInsertion.contributeDependencies(dependencyAnalyzer);
 
             exceptionCons = dependencyAnalyzer.linkMethod(new MethodReference(
                     NullPointerException.class, "<init>", void.class));
@@ -320,6 +322,7 @@ public class JavaScriptTarget implements TeaVMTarget, TeaVMJavaScriptHost {
         });
 
         dependencyAnalyzer.addDependencyListener(new WeakReferenceDependencyListener());
+        dependencyAnalyzer.addDependencyListener(new EventQueueDependencyListener());
         dependencyAnalyzer.addDependencyListener(reflection);
     }
 
@@ -441,6 +444,7 @@ public class JavaScriptTarget implements TeaVMTarget, TeaVMJavaScriptHost {
         renderer.renderStringConstants();
         renderer.renderCompatibilityStubs();
         emitMainMethod(classes, rememberingWriter);
+        emitRuntimeApi(rememberingWriter);
 
         for (var listener : rendererListeners) {
             listener.complete();
@@ -497,6 +501,19 @@ public class JavaScriptTarget implements TeaVMTarget, TeaVMJavaScriptHost {
 
         int totalSize = sourceWriter.getOffset() - start;
         printStats(sourceWriter, totalSize);
+    }
+
+    private void emitRuntimeApi(SourceWriter writer) {
+        var exitMethod = controller.getDependencyInfo().getMethod(new MethodReference(System.class, "exit",
+                int.class, void.class));
+        if (exitMethod == null || !exitMethod.isUsed()) {
+            return;
+        }
+        var alias = "$rt_export_teavmRuntime";
+        writer.startVariableDeclaration().appendFunction(alias)
+                .appendFunction("$rt_runtimeApi").append("()").endDeclaration();
+        exports.add(new ExportedDeclaration(w -> w.appendFunction(alias),
+                n -> n.functionName(alias), "teavmRuntime"));
     }
 
     private void emitMainMethod(ClassReaderSource classes, SourceWriter writer) {

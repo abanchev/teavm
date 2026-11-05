@@ -277,6 +277,7 @@ public final class GC {
         if (!isFullGC) {
             markFromOldGeneration();
         }
+        markMonitorsInStringLiterals();
 
         MemoryTrace.markCompleted();
     }
@@ -317,6 +318,24 @@ public final class GC {
                 stackRootsPtr = stackRootsPtr.add(Address.sizeOf());
             }
         }
+    }
+
+    private static void markMonitorsInStringLiterals() {
+        Mutator.stringHashtableRewind();
+        while (Mutator.stringHashtableCurrent() != null) {
+            var str = Mutator.stringHashtableCurrent();
+            if (!isInHeap(str.toAddress())) {
+                var monitor = Mutator.getMonitor(str);
+                if (monitor != null) {
+                    mark(monitor);
+                }
+            }
+            Mutator.stringHashtableNext();
+        }
+    }
+
+    private static boolean isInHeap(Address address) {
+        return !address.isLessThan(heapAddress()) && address.isLessThan(heapAddress().add(availableBytes()));
     }
 
     private static void markFromOldGeneration() {
@@ -419,7 +438,11 @@ public final class GC {
     }
 
     private static boolean markObjectData(RuntimeObject object) {
-        boolean hasObjectsFromYoungGen = enqueueMark(getMonitor(object.hashCode));
+        var monitor = Mutator.getMonitor(object);
+        var hasObjectsFromYoungGen = false;
+        if (monitor != null) {
+            hasObjectsFromYoungGen |= enqueueMark(monitor);
+        }
         RuntimeClass cls = RuntimeClass.getClass(object);
         if (cls.itemType == null) {
             hasObjectsFromYoungGen |= markObject(cls, object);
@@ -427,15 +450,6 @@ public final class GC {
             hasObjectsFromYoungGen |= markArray(cls, (RuntimeArray) object);
         }
         return hasObjectsFromYoungGen;
-    }
-
-    private static RuntimeObject getMonitor(int hashCode) {
-        // C stores the monitor in the tagged hash header, outside the ordinary field layout.
-        // Its payload is an offset from the heap base in four-byte units (TEAVM_PACK_MONITOR).
-        if (PlatformDetector.isC() && hashCode < 0) {
-            return heapAddress().add((hashCode & 0x7FFFFFFFL) * 4).toStructure();
-        }
-        return null;
     }
 
     private static boolean markObject(RuntimeClass cls, RuntimeObject object) {
@@ -1120,19 +1134,17 @@ public final class GC {
     }
 
     private static void updatePointers(RuntimeClass cls, RuntimeObject object) {
-        if (PlatformDetector.isC()) {
-            // Relocatable objects temporarily carry a forwarding record in both header words.
-            // The record's sizeBackup holds the original hash/monitor word until restoration.
-            Relocation relocation = getRelocation(object.toAddress());
-            RuntimeObject monitor = getMonitor(relocation != null ? relocation.sizeBackup : object.hashCode);
+        var relocation = getRelocation(object.toAddress());
+        if (relocation != null) {
+            var monitor = Mutator.getMonitor(relocation.toAddress().toStructure());
             if (monitor != null) {
-                Address relocated = updatePointer(monitor.toAddress());
-                int hashCode = (int) (relocated.diff(heapAddress()) / 4) | 0x80000000;
-                if (relocation != null) {
-                    relocation.sizeBackup = hashCode;
-                } else {
-                    object.hashCode = hashCode;
-                }
+                Mutator.setMonitor(relocation.toAddress().toStructure(),
+                        updatePointer(monitor.toAddress()).toStructure());
+            }
+        } else {
+            var monitor = Mutator.getMonitor(object);
+            if (monitor != null) {
+                Mutator.setMonitor(object, updatePointer(monitor.toAddress()).toStructure());
             }
         }
         if (cls.itemType == null) {
@@ -1216,7 +1228,14 @@ public final class GC {
     private static void updatePointersFromStringPool() {
         Mutator.stringHashtableRewind();
         while (Mutator.stringHashtableCurrent() != null) {
-            Mutator.stringHashtableUpdateRef(updatePointer(Mutator.stringHashtableCurrent().toAddress()).toStructure());
+            var str = Mutator.stringHashtableCurrent();
+            Mutator.stringHashtableUpdateRef(updatePointer(str.toAddress()).toStructure());
+            if (!isInHeap(str.toAddress())) {
+                var monitor = Mutator.getMonitor(str);
+                if (monitor != null) {
+                    Mutator.setMonitor(str, updatePointer(monitor.toAddress()).toStructure());
+                }
+            }
             Mutator.stringHashtableNext();
         }
     }

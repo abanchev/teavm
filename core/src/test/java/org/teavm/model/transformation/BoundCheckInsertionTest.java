@@ -51,6 +51,41 @@ public class BoundCheckInsertionTest {
         doTest();
     }
 
+    @Test
+    public void constantIndexInBounds() {
+        doTest();
+    }
+
+    @Test
+    public void constantIndexAboveSize() {
+        doTest();
+    }
+
+    @Test
+    public void negativeConstantIndex() {
+        doTest();
+    }
+
+    @Test
+    public void outOfBoundsFollowedByGet() {
+        doTest();
+    }
+
+    @Test
+    public void outOfBoundsFollowedByPut() {
+        doTest();
+    }
+
+    @Test
+    public void outOfBoundsInBranch() {
+        doTest();
+    }
+
+    @Test
+    public void outOfBoundsInTry() {
+        doTest();
+    }
+
     private void doTest() {
         String originalPath = PREFIX + name.getMethodName() + ".original.txt";
         String expectedPath = PREFIX + name.getMethodName() + ".expected.txt";

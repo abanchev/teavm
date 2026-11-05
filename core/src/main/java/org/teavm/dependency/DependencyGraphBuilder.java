@@ -310,6 +310,10 @@ class DependencyGraphBuilder {
         @Override
         public void getElement(VariableReader receiver, VariableReader array, VariableReader index,
                 ArrayElementType type) {
+            super.getElement(receiver, array, index, type);
+            if (dependencyAnalyzer.arrayBoundsChecked) {
+                consumeArrayIndexOutOfBounds();
+            }
             if (isPrimitive(type)) {
                 return;
             }
@@ -323,6 +327,10 @@ class DependencyGraphBuilder {
         @Override
         public void putElement(VariableReader array, VariableReader index, VariableReader value,
                 ArrayElementType type) {
+            super.putElement(array, index, value, type);
+            if (dependencyAnalyzer.arrayBoundsChecked) {
+                consumeArrayIndexOutOfBounds();
+            }
             if (isPrimitive(type)) {
                 return;
             }
@@ -331,6 +339,18 @@ class DependencyGraphBuilder {
             if (valueNode != null && arrayNode != null && valueNode != arrayNode.getArrayItem()) {
                 valueNode.connect(arrayNode.getArrayItem());
             }
+        }
+
+        @Override
+        public void boundCheck(VariableReader receiver, VariableReader index, VariableReader array,
+                boolean lower) {
+            super.boundCheck(receiver, index, array, lower);
+            consumeArrayIndexOutOfBounds();
+        }
+
+        private void consumeArrayIndexOutOfBounds() {
+            currentExceptionConsumer.consume(dependencyAnalyzer.getClassType(
+                    ArrayIndexOutOfBoundsException.class.getName()));
         }
 
         private boolean isPrimitive(ArrayElementType type) {

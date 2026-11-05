@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.UnsupportedEncodingException;
 import java.util.Locale;
 import org.junit.jupiter.api.Test;
+import org.teavm.compiler.bootstrap.junit.platform.BootstrapWasmGCTestPlatform;
 import org.teavm.junit.EachTestCompiledSeparately;
 import org.teavm.junit.SkipPlatform;
 import org.teavm.junit.TeaVMTest;
@@ -253,6 +254,15 @@ public class StringTest {
     }
 
     @Test
+    public void isBlankWorks() {
+        assertTrue("".isBlank());
+        assertTrue("  ".isBlank());
+        assertTrue("\t\n \u2008\r\f".isBlank());
+        assertFalse(" a ".isBlank());
+        assertFalse("\u00A0".isBlank());
+    }
+
+    @Test
     public void convertedToCharArray() {
         char[] array = "123".toCharArray();
         assertEquals(3, array.length);
@@ -337,7 +347,7 @@ public class StringTest {
     private String turkish = "istanbul";
 
     @Test
-    @SkipPlatform({ TestPlatform.C, TestPlatform.WEBASSEMBLY_GC })
+    @SkipPlatform({ TestPlatform.C, TestPlatform.WEBASSEMBLY_GC, BootstrapWasmGCTestPlatform.ID })
     public void convertsCaseLocaled() {
         assertEquals(turkish, "İstanbul".toLowerCase(new Locale("tr", "TR")));
         assertEquals(common, "İstanbul".toLowerCase(Locale.US));
