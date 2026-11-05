@@ -119,6 +119,7 @@ public class CoroutineTransformation {
             return;
         }
 
+        ProgramUtils.removeDeadPhis(program);
         this.program = program;
         parameterCount = methodReference.parameterCount();
         returnType = methodReference.getReturnType();

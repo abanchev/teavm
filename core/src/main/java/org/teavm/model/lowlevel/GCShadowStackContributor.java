@@ -33,9 +33,11 @@ import org.teavm.common.Graph;
 import org.teavm.common.GraphBuilder;
 import org.teavm.common.GraphUtils;
 import org.teavm.model.BasicBlock;
+import org.teavm.model.Incoming;
 import org.teavm.model.Instruction;
 import org.teavm.model.MethodReader;
 import org.teavm.model.MethodReference;
+import org.teavm.model.Phi;
 import org.teavm.model.Program;
 import org.teavm.model.Variable;
 import org.teavm.model.instructions.AssignInstruction;
@@ -67,6 +69,8 @@ public class GCShadowStackContributor {
     }
 
     public int contribute(Program program, MethodReader method) {
+        ProgramUtils.removeDeadPhis(program);
+        completePartialPhis(program, method);
         List<Map<Instruction, BitSet>> liveInInformation = findCallSiteLiveIns(program, method);
 
         boolean[] spilled = getAffectedVariables(liveInInformation, program);
@@ -106,6 +110,48 @@ public class GCShadowStackContributor {
         clearSlots(program, usedColors);
 
         return usedColors;
+    }
+
+    // A phi without an incoming from some predecessor holds garbage on that edge, and a root store or a coroutine's
+    // save can still read it there. Null is what the collector can take.
+    private void completePartialPhis(Program program, MethodReader method) {
+        var cfg = ProgramUtils.buildControlFlowGraph(program);
+        TypeInferer typeInferer = null;
+        Variable nullVar = null;
+        var sources = new BitSet(program.basicBlockCount());
+        for (BasicBlock block : program.getBasicBlocks()) {
+            int[] predecessors = cfg.incomingEdges(block.getIndex());
+            for (Phi phi : block.getPhis()) {
+                sources.clear();
+                for (Incoming incoming : phi.getIncomings()) {
+                    sources.set(incoming.getSource().getIndex());
+                }
+                for (int predecessor : predecessors) {
+                    if (sources.get(predecessor)) {
+                        continue;
+                    }
+                    if (typeInferer == null) {
+                        typeInferer = new TypeInferer();
+                        typeInferer.inferTypes(program, method.getReference());
+                    }
+                    if (!isReference(typeInferer, phi.getReceiver().getIndex())) {
+                        break;
+                    }
+                    if (nullVar == null) {
+                        nullVar = program.createVariable();
+                    }
+                    var incoming = new Incoming();
+                    incoming.setSource(program.basicBlockAt(predecessor));
+                    incoming.setValue(nullVar);
+                    phi.getIncomings().add(incoming);
+                }
+            }
+        }
+        if (nullVar != null) {
+            var constant = new NullConstantInstruction();
+            constant.setReceiver(nullVar);
+            program.basicBlockAt(0).addFirst(constant);
+        }
     }
 
     private void clearSlots(Program program, int slots) {
