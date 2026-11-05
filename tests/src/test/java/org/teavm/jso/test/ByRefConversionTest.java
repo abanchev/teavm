@@ -16,7 +16,9 @@
 package org.teavm.jso.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.teavm.jso.JSBody;
 import org.teavm.jso.JSByRef;
@@ -31,6 +33,19 @@ import org.teavm.junit.TestPlatform;
 @SkipJVM
 @OnlyPlatform(TestPlatform.JAVASCRIPT)
 public class ByRefConversionTest {
+    @Test
+    public void passesNullArraysByRef() {
+        assertTrue(allNull(null, null, null, null, null, null, null));
+        assertFalse(allNull(null, null, null, null, null, new float[0], null));
+    }
+
+    @JSBody(params = { "bytes", "shorts", "chars", "ints", "longs", "floats", "doubles" },
+            script = "return bytes === null && shorts === null && chars === null && ints === null"
+                    + " && longs === null && floats === null && doubles === null;")
+    private static native boolean allNull(@JSByRef byte[] bytes, @JSByRef short[] shorts,
+            @JSByRef char[] chars, @JSByRef int[] ints, @JSByRef long[] longs, @JSByRef float[] floats,
+            @JSByRef double[] doubles);
+
     @Test
     @SkipPlatform(TestPlatform.WEBASSEMBLY_GC)
     public void passesArrayByRef() {

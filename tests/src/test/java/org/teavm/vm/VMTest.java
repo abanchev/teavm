@@ -170,6 +170,34 @@ public class VMTest {
     }
 
     @Test
+    public void finallyPreservesLastLocalAssignmentAcrossThrow() {
+        int[] cleanup = new int[1];
+        for (int stop = 0; stop < 4; stop++) {
+            try {
+                copyAndThrow(stop, cleanup);
+                assertEquals(3, stop);
+            } catch (IllegalArgumentException e) {
+                assertEquals(stop, cleanup[0]);
+            }
+        }
+        assertEquals(3, cleanup[0]);
+    }
+
+    private static void copyAndThrow(int stop, int[] cleanup) {
+        int high = 0;
+        try {
+            for (int i = 0; i < 3; i++) {
+                if (i == stop) {
+                    throw new IllegalArgumentException();
+                }
+                high = i + 1;
+            }
+        } finally {
+            cleanup[0] = high;
+        }
+    }
+
+    @Test
     public void breakLoopFromCatch() {
         var caught = false;
         while (true) {
