@@ -501,6 +501,26 @@ public class PhiUpdater {
                     }
                 }
             }
+            if (allVersions) {
+                removeDuplicateIncomings(incomings);
+            }
+        }
+    }
+
+    // Repeated updates would otherwise multiply equal handler incomings on each pass
+    private void removeDuplicateIncomings(List<Incoming> incomings) {
+        for (var i = incomings.size() - 1; i > 0; --i) {
+            var incoming = incomings.get(i);
+            if (incoming.getSource() != currentBlock) {
+                continue;
+            }
+            for (var j = 0; j < i; ++j) {
+                var other = incomings.get(j);
+                if (other.getSource() == currentBlock && other.getValue() == incoming.getValue()) {
+                    incomings.remove(i);
+                    break;
+                }
+            }
         }
     }
 
