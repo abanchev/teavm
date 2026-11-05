@@ -109,6 +109,7 @@ public abstract class DependencyAnalyzer implements DependencyInfo {
     private ClassHierarchy classHierarchy;
     IncrementalCache incrementalCache = new IncrementalCache();
     boolean asyncSupported;
+    boolean lateCheckInsertion;
     private ReferenceCache referenceCache;
     private Set<String> generatedClassNames = new HashSet<>();
     DependencyType classType;
@@ -163,6 +164,11 @@ public abstract class DependencyAnalyzer implements DependencyInfo {
 
     public void setStrict(boolean strict) {
         classSource.strict = strict;
+    }
+
+    // The target inserts null and bound checks after this analysis, so any block may throw their exceptions.
+    public void setLateCheckInsertion(boolean lateCheckInsertion) {
+        this.lateCheckInsertion = lateCheckInsertion;
     }
 
     public void setAsyncSupported(boolean asyncSupported) {

@@ -313,6 +313,7 @@ public class CTarget implements TeaVMTarget, TeaVMCHost {
 
     @Override
     public void contributeDependencies(DependencyAnalyzer dependencyAnalyzer) {
+        dependencyAnalyzer.setLateCheckInsertion(true);
         dependencyAnalyzer.linkMethod(new MethodReference(Class.class, "createClass", ClassInfo.class, Class.class))
                 .use();
 

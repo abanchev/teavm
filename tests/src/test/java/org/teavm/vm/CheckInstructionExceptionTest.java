@@ -16,6 +16,7 @@
 package org.teavm.vm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -193,6 +194,86 @@ public class CheckInstructionExceptionTest {
             } catch (ArrayIndexOutOfBoundsException e) {
                 synchronized (lock) {
                     assertSame(lock, lock);
+                }
+            }
+        }
+    }
+
+    @Test
+    public void stackTraceOfExplicitlyThrownException() {
+        try {
+            throw new ArrayIndexOutOfBoundsException();
+        } catch (ArrayIndexOutOfBoundsException e) {
+            assertNotNull(e.getStackTrace());
+        }
+    }
+
+    // No fail() in the try bodies below: code it reaches throws exceptions of its own, which hid this crash for
+    // null checks. The analysis must learn from the failing check alone that the exception reaches the handler.
+    @Test
+    public void stackTraceOfFailedBoundCheck() {
+        var thrown = false;
+        try {
+            READERS[0].read(new int[1], 3);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            thrown = true;
+            for (var element : e.getStackTrace()) {
+                assertNotNull(element.getMethodName());
+            }
+        }
+        assertTrue(thrown);
+    }
+
+    @Test
+    public void stackTraceOfFailedNullCheck() {
+        var thrown = false;
+        try {
+            READERS[0].read(null, 0);
+        } catch (NullPointerException e) {
+            thrown = true;
+            for (var element : e.getStackTrace()) {
+                assertNotNull(element.getMethodName());
+            }
+        }
+        assertTrue(thrown);
+    }
+
+    @Test
+    public void broadHandlerCallsVirtualMethodsOfCheckException() {
+        var thrown = false;
+        try {
+            READERS[0].read(new int[1], 3);
+        } catch (RuntimeException e) {
+            thrown = true;
+            assertNotNull(e.getStackTrace());
+            assertNotNull(e.toString());
+            assertEquals(null, e.getCause());
+        }
+        assertTrue(thrown);
+    }
+
+    @Test
+    public void stackTraceOfFailedCast() {
+        try {
+            castLength("string", 2);
+            fail();
+        } catch (ClassCastException e) {
+            for (var element : e.getStackTrace()) {
+                assertNotNull(element.getMethodName());
+            }
+        }
+    }
+
+    @Test
+    public void stackTracesSurviveCollection() {
+        var array = new int[4];
+        for (var i = 0; i < GC_ROUNDS / 4; ++i) {
+            try {
+                READERS[i & 1].read(array, 4 + (i & 1023));
+            } catch (ArrayIndexOutOfBoundsException e) {
+                sink = new int[8];
+                for (var element : e.getStackTrace()) {
+                    assertNotNull(element.getMethodName());
                 }
             }
         }

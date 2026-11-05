@@ -110,6 +110,11 @@ class DependencyGraphBuilder {
         for (int i = 0; i < program.basicBlockCount(); ++i) {
             BasicBlockReader block = program.basicBlockAt(i);
             currentExceptionConsumer = createExceptionConsumer(dep, block);
+            if (dependencyAnalyzer.lateCheckInsertion) {
+                currentExceptionConsumer.consume(dependencyAnalyzer.getClassType("java.lang.NullPointerException"));
+                currentExceptionConsumer.consume(dependencyAnalyzer.getClassType(
+                        "java.lang.ArrayIndexOutOfBoundsException"));
+            }
             block.readAllInstructions(reader);
 
             for (PhiReader phi : block.readPhis()) {
