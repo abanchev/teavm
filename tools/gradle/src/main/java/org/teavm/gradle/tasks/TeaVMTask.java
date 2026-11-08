@@ -52,6 +52,8 @@ public abstract class TeaVMTask extends DefaultTask {
         getTargetFileName().convention("bundle");
         getOptimization().convention(OptimizationLevel.BALANCED);
         getFastGlobalAnalysis().convention(false);
+        getAsyncEnabled().convention(false);
+        getAssertionsRemoved().convention(false);
         getOutOfProcess().convention(false);
         getProcessMemory().convention(512);
     }
@@ -74,6 +76,14 @@ public abstract class TeaVMTask extends DefaultTask {
     @Input
     @Optional
     public abstract Property<Boolean> getFastGlobalAnalysis();
+
+    @Input
+    @Optional
+    public abstract Property<Boolean> getAsyncEnabled();
+
+    @Input
+    @Optional
+    public abstract Property<Boolean> getAssertionsRemoved();
 
     @Input
     @Optional
@@ -135,6 +145,8 @@ public abstract class TeaVMTask extends DefaultTask {
         builder.setTargetFileName(getTargetFileName().get());
         builder.setOptimizationLevel(map(getOptimization().get()));
         builder.setFastDependencyAnalysis(getFastGlobalAnalysis().get());
+        builder.setAsyncEnabled(getAsyncEnabled().get());
+        builder.setAssertionsRemoved(getAssertionsRemoved().get());
         builder.setTargetDirectory(getOutputDir().get().getAbsolutePath());
         builder.setClassesToPreserve(getPreservedClasses().get().toArray(new String[0]));
         if (getProperties().isPresent()) {

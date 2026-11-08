@@ -50,7 +50,11 @@ import org.teavm.diagnostics.AccumulationDiagnostics;
 import org.teavm.diagnostics.Diagnostics;
 import org.teavm.diagnostics.ProblemProvider;
 import org.teavm.extension.ExtensionEnvironment;
+import org.teavm.extension.ExtensionPolicyProvider;
+import org.teavm.extension.ExtensionPolicySource;
+import org.teavm.interop.Async;
 import org.teavm.model.BasicBlock;
+import org.teavm.model.CallLocation;
 import org.teavm.model.ClassHierarchy;
 import org.teavm.model.ClassHolder;
 import org.teavm.model.ClassHolderSource;
@@ -96,6 +100,7 @@ import org.teavm.model.optimization.SystemArrayCopyOptimization;
 import org.teavm.model.optimization.UnreachableBasicBlockElimination;
 import org.teavm.model.optimization.UnusedVariableElimination;
 import org.teavm.model.text.ListingBuilder;
+import org.teavm.model.transformation.AssertionRemoval;
 import org.teavm.model.transformation.ClassInitializerInsertionTransformer;
 import org.teavm.model.util.ModelUtils;
 import org.teavm.model.util.ProgramUtils;
@@ -170,6 +175,9 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
     private int compileProgressValue;
     private ClassSourcePacker classSourcePacker;
     private ClassInitializerInfo classInitializerInfo;
+    private boolean assertionsRemoved;
+    private AssertionRemoval assertionRemoval;
+    private boolean asyncEnabled;
 
     TeaVM(TeaVMBuilder builder) {
         target = builder.target;
@@ -235,6 +243,13 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
         dependencyAnalyzer.addDependencyPlugin(methodRef, dependencyPlugin);
     }
 
+    /**
+     * Adds provider of extension policies, which are used along with policies registered as services.
+     */
+    public void addExtensionPolicyProvider(ExtensionPolicyProvider provider) {
+        dependencyAnalyzer.extensionEnvironment().addPolicyProvider(provider);
+    }
+
     @Override
     public ClassLoader getClassLoader() {
         return classLoader;
@@ -286,6 +301,33 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
 
     public TeaVMProgressListener getProgressListener() {
         return progressListener;
+    }
+
+    public boolean isAssertionsRemoved() {
+        return assertionsRemoved;
+    }
+
+    /**
+     * Specifies whether assertions should be removed from generated code. Assertions are removed
+     * after dependency analysis, so classes used only by assertions (like {@link AssertionError})
+     * are still considered reachable.
+     */
+    public void setAssertionsRemoved(boolean assertionsRemoved) {
+        this.assertionsRemoved = assertionsRemoved;
+    }
+
+    public boolean isAsyncEnabled() {
+        return asyncEnabled;
+    }
+
+    /**
+     * Specifies whether coroutine transformation is enabled, i.e. whether methods are allowed to be
+     * async (suspend execution). When disabled (the default), TeaVM reports an error for each reachable
+     * method marked with {@link Async}, like {@link Thread#sleep(long)} or {@link Object#wait()}.
+     * Note that some targets don't support async methods at all; this flag has no effect for them.
+     */
+    public void setAsyncEnabled(boolean asyncEnabled) {
+        this.asyncEnabled = asyncEnabled;
     }
 
     public void setProgressListener(TeaVMProgressListener progressListener) {
@@ -415,7 +457,7 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
         }
 
         target.setEntryPoint(entryPoint, entryPointName);
-        dependencyAnalyzer.setAsyncSupported(target.isAsyncSupported());
+        dependencyAnalyzer.setAsyncSupported(target.isAsyncSupported() && asyncEnabled);
         dependencyAnalyzer.setInterruptor(() -> {
             int progress = dependencyAnalyzer.getReachableClasses().size();
             cancelled |= progressListener.progressReached(progress) != TeaVMProgressFeedback.CONTINUE;
@@ -428,6 +470,9 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
             dependencyAnalyzer.addDependencyListener(new StdlibDependencyListener());
         }
         dependencyAnalyzer.processDependencies();
+        if (!asyncEnabled) {
+            reportAsyncMethods();
+        }
         if (wasCancelled() || !diagnostics.getSevereProblems().isEmpty()) {
             return;
         }
@@ -440,6 +485,10 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
 
         if (wasCancelled()) {
             return;
+        }
+
+        if (assertionsRemoved) {
+            analyzeAssertions();
         }
 
         boolean isLazy = optimizationLevel == TeaVMOptimizationLevel.SIMPLE;
@@ -513,6 +562,7 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
             insertClassInit(classSet);
             classInitializerInfo = ClassInitializerInfo.EMPTY;
         }
+        removeAssertions(classSet);
 
         dependencyAnalyzer.cleanupTypes();
 
@@ -561,6 +611,45 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
                     continue;
                 }
                 clinitInsertion.apply(method, program);
+            }
+        }
+    }
+
+    private void reportAsyncMethods() {
+        for (var methodRef : dependencyAnalyzer.getReachableMethods()) {
+            var methodDep = dependencyAnalyzer.getMethod(methodRef);
+            if (methodDep == null || !methodDep.isUsed() || methodDep.getMethod() == null) {
+                continue;
+            }
+            if (methodDep.getMethod().getAnnotations().get(Async.class.getName()) != null) {
+                diagnostics.error(new CallLocation(methodRef), "Method {{m0}} is async, but async "
+                        + "support is disabled. Either avoid calling this method or enable "
+                        + "async support (asyncEnabled option). Note that async support has many quirks "
+                        + "and has negative impact on the performance of the whole application.", methodRef);
+            }
+        }
+    }
+
+    private void analyzeAssertions() {
+        assertionRemoval = new AssertionRemoval(dependencyAnalyzer.getClassSource());
+        assertionRemoval.analyze(new ListableClassReaderSourceAdapter(dependencyAnalyzer.getClassSource(),
+                new LinkedHashSet<>(dependencyAnalyzer.getReachableClasses())), method -> {
+                    var methodDep = dependencyAnalyzer.getMethod(method);
+                    return methodDep != null && methodDep.isUsed();
+                });
+    }
+
+    private void removeAssertions(ListableClassHolderSource classes) {
+        if (assertionRemoval == null) {
+            return;
+        }
+        for (String className : classes.getClassNames()) {
+            ClassHolder cls = classes.get(className);
+            for (MethodHolder method : cls.getMethods()) {
+                Program program = method.getProgram();
+                if (program != null) {
+                    assertionRemoval.apply(program);
+                }
             }
         }
     }
@@ -854,11 +943,11 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
         if (optimizationLevel.ordinal() >= TeaVMOptimizationLevel.ADVANCED.ordinal()) {
             optimizations.add(new ConstantConditionElimination());
             optimizations.add(new RedundantJumpElimination());
-            optimizations.add(new UnusedVariableElimination());
+            optimizations.add(new UnusedVariableElimination(false));
         }
         optimizations.add(new ClassInitElimination());
         optimizations.add(new UnreachableBasicBlockElimination());
-        optimizations.add(new UnusedVariableElimination());
+        optimizations.add(new UnusedVariableElimination(false));
         if (target.needsSystemArrayCopyOptimization()) {
             optimizations.add(new SystemArrayCopyOptimization());
         }
@@ -1022,6 +1111,11 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
         public ExtensionEnvironment extensionEnvironment() {
             return dependencyAnalyzer.extensionEnvironment();
         }
+
+        @Override
+        public ExtensionPolicySource extensionPolicies() {
+            return dependencyAnalyzer.extensionEnvironment();
+        }
     };
 
     class PostProcessingClassHolderSource implements ListableClassHolderSource {
@@ -1061,6 +1155,9 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
                     if (program == null) {
                         program = ProgramUtils.copy(classReader.getMethod(method.getDescriptor()).getProgram());
                         clinitInsertion.apply(method, program);
+                        if (assertionRemoval != null) {
+                            assertionRemoval.apply(program);
+                        }
                         target.beforeInlining(program, method);
                         program = optimizeMethodCacheMiss(method, program);
                         Program finalProgram = program;

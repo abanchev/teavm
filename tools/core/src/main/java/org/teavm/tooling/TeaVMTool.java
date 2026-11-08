@@ -62,7 +62,6 @@ import org.teavm.model.ClassHolderTransformer;
 import org.teavm.model.ClassReader;
 import org.teavm.model.PreOptimizingClassHolderSource;
 import org.teavm.model.ReferenceCache;
-import org.teavm.model.transformation.AssertionRemoval;
 import org.teavm.parsing.ClasspathClassHolderSource;
 import org.teavm.parsing.ClasspathResourceProvider;
 import org.teavm.parsing.resource.ResourceProvider;
@@ -124,6 +123,7 @@ public class TeaVMTool {
     private boolean heapDump;
     private boolean shortFileNames;
     private boolean assertionsRemoved;
+    private boolean asyncEnabled;
     private SourceMapBuilder wasmSourceMapWriter;
 
     public File getTargetDirectory() {
@@ -317,6 +317,10 @@ public class TeaVMTool {
         this.assertionsRemoved = assertionsRemoved;
     }
 
+    public void setAsyncEnabled(boolean asyncEnabled) {
+        this.asyncEnabled = asyncEnabled;
+    }
+
     public void setProgressListener(TeaVMProgressListener progressListener) {
         this.progressListener = progressListener;
     }
@@ -403,6 +407,7 @@ public class TeaVMTool {
         cTarget.setLineNumbersGenerated(debugInformationGenerated);
         cTarget.setHeapDump(heapDump);
         cTarget.setObfuscated(obfuscated);
+        cTarget.setStrict(strict);
         cTarget.setFileNames(shortFileNames
                 ? new ShorteningFileNameProvider(new SimpleFileNameProvider())
                 : new SimpleFileNameProvider());
@@ -461,9 +466,8 @@ public class TeaVMTool {
                 vm.setProgressListener(progressListener);
             }
 
-            if (assertionsRemoved) {
-                vm.add(new AssertionRemoval());
-            }
+            vm.setAssertionsRemoved(assertionsRemoved);
+            vm.setAsyncEnabled(asyncEnabled);
 
             vm.setProperties(properties);
             vm.setProgramCache(incremental ? programCache : EmptyProgramCache.INSTANCE);

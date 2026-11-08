@@ -20,20 +20,24 @@ import org.teavm.common.DominatorTree;
 import org.teavm.common.Graph;
 import org.teavm.common.GraphUtils;
 import org.teavm.model.BasicBlock;
+import org.teavm.model.Instruction;
 import org.teavm.model.Program;
 import org.teavm.model.TryCatchBlock;
 
 public class DominatorWalker {
     private Program program;
-    private DominatorTree dom;
     private Graph cfg;
     private Graph domGraph;
     private int[] order;
 
     public DominatorWalker(Program program) {
         this.program = program;
-        cfg = ProgramUtils.buildControlFlowGraph(program);
-        dom = GraphUtils.buildDominatorTree(cfg);
+        // Node 2 * i is the entry of block i, and node 2 * i + 1 is its body. Exception handlers are connected
+        // to the entry node, because an exception can leave a block before any of its instructions run.
+        // Therefore, a block is visited in scope of a protected block only if it's reachable from
+        // the protected block's body without passing through an exception edge.
+        cfg = ProgramUtils.buildControlFlowGraph2(program);
+        DominatorTree dom = GraphUtils.buildDominatorTree(cfg);
         domGraph = GraphUtils.buildDominatorGraph(dom, cfg.size());
         order = dfs(cfg);
     }
@@ -74,34 +78,43 @@ public class DominatorWalker {
     }
 
     public <T> void walk(DominatorWalkerCallback<T> callback) {
-        int[] stack = new int[program.basicBlockCount() * 2];
+        int[] stack = new int[cfg.size() * 2];
         Object[] stateStack = new Object[stack.length];
         boolean[] backward = new boolean[stack.length];
-        ContextImpl context = new ContextImpl(dom, cfg, findExceptionHandlers());
+        ContextImpl context = new ContextImpl(program, cfg, findExceptionHandlers());
         callback.setContext(context);
 
         int head = 1;
         while (head > 0) {
             int node = stack[--head];
-            BasicBlock block = program.basicBlockAt(node);
+            BasicBlock block = program.basicBlockAt(node / 2);
             if (backward[head]) {
                 @SuppressWarnings("unchecked")
                 T state = (T) stateStack[head];
                 callback.endVisit(block, state);
                 context.visited[block.getIndex()] = true;
-            } else if (callback.filter(block)) {
+                continue;
+            }
+            if (node % 2 == 0) {
+                if (!callback.filter(block)) {
+                    continue;
+                }
+            } else {
                 stack[head] = node;
                 backward[head] = true;
                 stateStack[head] = callback.visit(block);
                 head++;
+            }
 
-                int[] successors = domGraph.outgoingEdges(node);
-                sort(successors);
-                for (int i = successors.length - 1; i >= 0; --i) {
-                    stack[head] = successors[i];
-                    backward[head] = false;
-                    head++;
-                }
+            // Visit children in reverse postorder. This guarantees that when visiting a block, all of its
+            // predecessors are already visited, except for ones connected by back edges.
+            int[] successors = domGraph.outgoingEdges(node);
+            sort(successors);
+            for (int i = successors.length - 1; i >= 0; --i) {
+                stack[head] = successors[i];
+                backward[head] = false;
+                stateStack[head] = null;
+                head++;
             }
         }
     }
@@ -124,7 +137,7 @@ public class DominatorWalker {
             for (int j = i + 1; j < nodes.length; ++j) {
                 int b = nodes[j];
                 int score = order[b];
-                if (score < best) {
+                if (score > best) {
                     best = score;
                     a = b;
                     bestIndex = j;
@@ -138,21 +151,17 @@ public class DominatorWalker {
     }
 
     static class ContextImpl implements DominatorWalkerContext {
+        private Program program;
         private boolean[] visited;
         private boolean[] isExceptionHandler;
-        private DominatorTree dom;
         private Graph cfg;
+        private TransitionExtractor transitionExtractor = new TransitionExtractor();
 
-        ContextImpl(DominatorTree dom, Graph cfg, boolean[] isExceptionHandler) {
-            this.dom = dom;
+        ContextImpl(Program program, Graph cfg, boolean[] isExceptionHandler) {
+            this.program = program;
             this.cfg = cfg;
             this.isExceptionHandler = isExceptionHandler;
-            visited = new boolean[cfg.size()];
-        }
-
-        @Override
-        public DominatorTree getDominatorTree() {
-            return dom;
+            visited = new boolean[cfg.size() / 2];
         }
 
         @Override
@@ -168,6 +177,28 @@ public class DominatorWalker {
         @Override
         public boolean isExceptionHandler(int blockIndex) {
             return isExceptionHandler[blockIndex];
+        }
+
+        @Override
+        public int getSinglePredecessor(int blockIndex) {
+            // Exception edges come from entry nodes (even), normal edges come from body nodes (odd)
+            int[] predecessors = cfg.incomingEdges(blockIndex * 2);
+            if (predecessors.length != 1 || predecessors[0] % 2 == 0) {
+                return -1;
+            }
+
+            // CFG does not keep parallel edges, e.g. a branching instruction with consequent equal
+            // to alternative, so count them explicitly
+            int predecessor = predecessors[0] / 2;
+            Instruction last = program.basicBlockAt(predecessor).getLastInstruction();
+            last.acceptVisitor(transitionExtractor);
+            int count = 0;
+            for (BasicBlock target : transitionExtractor.getTargets()) {
+                if (target.getIndex() == blockIndex) {
+                    ++count;
+                }
+            }
+            return count == 1 ? predecessor : -1;
         }
     }
 }

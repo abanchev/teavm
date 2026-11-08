@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
+import org.teavm.junit.AsyncEnabled;
 import org.teavm.junit.EachTestCompiledSeparately;
 import org.teavm.junit.SkipPlatform;
 import org.teavm.junit.TeaVMTest;
@@ -76,6 +77,7 @@ public class ObjectTest {
     }
 
     @Test
+    @AsyncEnabled
     public void waitWorks() throws InterruptedException {
         long start = System.currentTimeMillis();
         final Object lock = new Object();
@@ -87,6 +89,7 @@ public class ObjectTest {
     }
 
     @Test
+    @AsyncEnabled
     public void monitorSurvivesGarbageCollection() {
         assertNotNull(Thread.currentThread());
         Object[] locks = { new Object(), new int[1], new Object[1] };
@@ -109,6 +112,7 @@ public class ObjectTest {
     }
 
     @Test
+    @AsyncEnabled
     public void repeatedLocksPreserveIdentityAndOwnership() {
         Object[] locks = { new Object(), new int[1], new Object[1] };
         int[] identities = new int[locks.length];
@@ -138,6 +142,7 @@ public class ObjectTest {
     }
 
     @Test
+    @AsyncEnabled
     public void repeatedWaitNotifyPreservesReentrantLock() throws InterruptedException {
         Object lock = new Object();
         boolean[] ready = new boolean[1];
@@ -168,6 +173,7 @@ public class ObjectTest {
     }
 
     @Test
+    @AsyncEnabled
     public void notifyAfterTimedOutWaitWakesWaiter() throws InterruptedException {
         Object lock = new Object();
         // [0]: the waiter's timed wait has ended and it waits again; [1]: the main thread has notified.
@@ -208,6 +214,7 @@ public class ObjectTest {
     }
 
     @Test
+    @AsyncEnabled
     public void interruptedWaitHoldsMonitorAndDoesNotAbsorbNotify() throws InterruptedException {
         Object lock = new Object();
         // [0]: in the first wait; [1]: interrupted, waits again; [2]: notified; [3]: second wait returned.
@@ -268,6 +275,7 @@ public class ObjectTest {
     @Test
     @SkipPlatform(TestPlatform.C)
     // Does not pass in C due to bug in coroutine transformation
+    @AsyncEnabled
     public void allQueuedThreadsEnterMonitor() throws InterruptedException {
         var lock = new Object();
         var entered = new int[1];

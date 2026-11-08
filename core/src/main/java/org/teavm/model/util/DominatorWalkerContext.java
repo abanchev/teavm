@@ -15,21 +15,34 @@
  */
 package org.teavm.model.util;
 
-import org.teavm.common.DominatorTree;
 import org.teavm.common.Graph;
 
 public interface DominatorWalkerContext {
-    DominatorTree getDominatorTree();
-
+    /**
+     * Returns control flow graph, where node {@code 2 * i} is the entry of block {@code i}
+     * and node {@code 2 * i + 1} is its body.
+     *
+     * @see ProgramUtils#buildControlFlowGraph2(org.teavm.model.Program)
+     */
     Graph getControlFlowGraph();
 
     boolean isVisited(int blockIndex);
 
     boolean isExceptionHandler(int blockIndex);
 
+    /**
+     * <p>Returns the only predecessor of the given block, if the block can be entered only by a single normal
+     * (non-exceptional) edge. Otherwise, returns {@code -1}.</p>
+     *
+     * <p>Only such blocks should be refined by facts derived from the predecessor's branch condition.
+     * Being dominated by the branching block is not sufficient, since another path can join the target
+     * block, bypassing the edge where the condition holds.</p>
+     */
+    int getSinglePredecessor(int blockIndex);
+
     default boolean allPredecessorsVisited(int blockIndex) {
-        for (int predecessor : getControlFlowGraph().incomingEdges(blockIndex)) {
-            if (!isVisited(predecessor)) {
+        for (int predecessor : getControlFlowGraph().incomingEdges(blockIndex * 2)) {
+            if (!isVisited(predecessor / 2)) {
                 return false;
             }
         }
