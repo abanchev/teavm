@@ -412,7 +412,9 @@ public class CTarget implements TeaVMTarget, TeaVMCHost {
 
     @Override
     public void beforeOptimizations(Program program, MethodReader method) {
-        if (!isUnchecked(method.getReference())) {
+        // With teavm.c.uncheckedBounds, an array access past the end corrupts memory instead of throwing.
+        if (!isUnchecked(method.getReference())
+                && !"true".equals(controller.getProperties().getProperty("teavm.c.uncheckedBounds"))) {
             boundCheckInsertion.transformProgram(program, method.getReference());
         }
     }
