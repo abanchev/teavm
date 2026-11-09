@@ -306,38 +306,7 @@ public class TCharacter extends TObject implements TComparable<TCharacter> {
     private static native StringResource acquireTitleCaseMapping();
 
     private static int mapChar(CharMapping table, int codePoint) {
-        if (codePoint < table.fastTable.length) {
-            return codePoint + table.fastTable[codePoint];
-        }
-
-        var binSearchTable = table.binarySearchTable;
-        int index = binarySearchTable(binSearchTable, codePoint);
-        if (index < 0 || index * 2 >= binSearchTable.length) {
-            return 0;
-        }
-        return codePoint + binSearchTable[index * 2 + 1];
-    }
-
-    private static int binarySearchTable(int[] data, int key) {
-        int l = 0;
-        int u = data.length / 2 - 1;
-        while (true) {
-            int i = (l + u) / 2;
-            int e = data[i * 2];
-            if (e == key) {
-                return i;
-            } else if (e > key) {
-                u = i - 1;
-                if (u < l) {
-                    return i - 1;
-                }
-            } else {
-                l = i + 1;
-                if (l > u) {
-                    return i;
-                }
-            }
-        }
+        return UnicodeHelper.mapChar(table, codePoint);
     }
 
     public static int digit(char ch, int radix) {
@@ -537,6 +506,10 @@ public class TCharacter extends TObject implements TComparable<TCharacter> {
     }
 
     public static int getType(int codePoint) {
+        // cc3d local patch, not for upstream: ASCII never decodes the category table.
+        if (codePoint >= 0 && codePoint < 128) {
+            return UnicodeHelper.ASCII_TYPES.charAt(codePoint) - '0';
+        }
         if (isBmpCodePoint(codePoint) && isSurrogate((char) codePoint)) {
             return SURROGATE;
         }
