@@ -23,6 +23,51 @@ public final class UnicodeHelper {
     private UnicodeHelper() {
     }
 
+    // cc3d local patch, not for upstream: Character.getType for ASCII without decoding the full
+    // category table (about 300 KB of heap). Character c has category ASCII_TYPES.charAt(c) - '0'.
+    public static final String ASCII_TYPES = "????????????????????????????????<HHHJHHHEFHIHDHH9999999999HHIIIHH"
+            + "11111111111111111111111111EHFKGK22222222222222222222222222EIFI?";
+
+    // cc3d local patch, not for upstream: case mappings keep a direct table for Latin-1 only, not
+    // for the whole BMP (2 x 256 KB of heap); other characters use the same pairs by binary search.
+    static final int FAST_CASE_TABLE_SIZE = 256;
+
+    /** Maps a code point through a case table: its direct table, else a floor search of the pairs. */
+    public static int mapChar(CharMapping table, int codePoint) {
+        if (codePoint < table.fastTable.length) {
+            return codePoint + table.fastTable[codePoint];
+        }
+
+        var binSearchTable = table.binarySearchTable;
+        int index = binarySearchTable(binSearchTable, codePoint);
+        if (index < 0 || index * 2 >= binSearchTable.length) {
+            return 0;
+        }
+        return codePoint + binSearchTable[index * 2 + 1];
+    }
+
+    private static int binarySearchTable(int[] data, int key) {
+        int l = 0;
+        int u = data.length / 2 - 1;
+        while (true) {
+            int i = (l + u) / 2;
+            int e = data[i * 2];
+            if (e == key) {
+                return i;
+            } else if (e > key) {
+                u = i - 1;
+                if (u < l) {
+                    return i - 1;
+                }
+            } else {
+                l = i + 1;
+                if (l > u) {
+                    return i;
+                }
+            }
+        }
+    }
+
     static char hexDigit(int value) {
         return value < 10 ? (char) ('0' + value) : (char) ('A' + value);
     }
@@ -127,7 +172,11 @@ public final class UnicodeHelper {
     }
 
     public static CharMapping createCharMapping(int[] data) {
-        var result = new int[65536];
+        return createCharMapping(data, FAST_CASE_TABLE_SIZE);
+    }
+
+    static CharMapping createCharMapping(int[] data, int fastTableSize) {
+        var result = new int[fastTableSize];
         var last = 0;
         var lastValue = 0;
         for (var i = 0; i < data.length; i += 2) {
