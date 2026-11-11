@@ -16,6 +16,7 @@
 package org.teavm.classlib.java.lang;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -85,6 +86,90 @@ public class ObjectTest {
         }
         long end = System.currentTimeMillis();
         assertTrue(end - start > 100);
+    }
+
+    @Test
+    @AsyncEnabled
+    public void monitorSurvivesGarbageCollection() {
+        assertNotNull(Thread.currentThread());
+        Object[] locks = { new Object(), new int[1], new Object[1] };
+        for (Object lock : locks) {
+            int identity = System.identityHashCode(lock);
+            synchronized (lock) {
+                assertTrue(Thread.holdsLock(lock));
+                System.gc();
+                byte[][] allocations = new byte[64][];
+                for (int i = 0; i < allocations.length; i++) {
+                    allocations[i] = new byte[64];
+                    allocations[i][0] = (byte) i;
+                }
+                assertTrue(Thread.holdsLock(lock), "collection must preserve monitor ownership");
+                assertEquals(identity, System.identityHashCode(lock));
+                assertEquals(63, allocations[63][0]);
+            }
+            assertEquals(identity, System.identityHashCode(lock));
+        }
+    }
+
+    @Test
+    @AsyncEnabled
+    public void repeatedLocksPreserveIdentityAndOwnership() {
+        Object[] locks = { new Object(), new int[1], new Object[1] };
+        int[] identities = new int[locks.length];
+        for (int i = 0; i < locks.length; i++) {
+            identities[i] = System.identityHashCode(locks[i]);
+        }
+        for (int pass = 0; pass < 20; pass++) {
+            for (int i = 0; i < locks.length; i++) {
+                Object lock = locks[i];
+                assertFalse(Thread.holdsLock(lock));
+                synchronized (lock) {
+                    synchronized (lock) {
+                        assertTrue(Thread.holdsLock(lock));
+                        assertEquals(identities[i], System.identityHashCode(lock));
+                    }
+                    synchronized (locks[(i + 1) % locks.length]) {
+                        assertTrue(Thread.holdsLock(lock));
+                    }
+                    assertTrue(Thread.holdsLock(lock));
+                }
+                assertFalse(Thread.holdsLock(lock));
+                assertEquals(identities[i], System.identityHashCode(lock));
+            }
+            // A detached reusable monitor must remain valid across relocation.
+            System.gc();
+        }
+    }
+
+    @Test
+    @AsyncEnabled
+    public void repeatedWaitNotifyPreservesReentrantLock() throws InterruptedException {
+        Object lock = new Object();
+        boolean[] ready = new boolean[1];
+        int identity = System.identityHashCode(lock);
+        for (int i = 0; i < 4; i++) {
+            ready[0] = false;
+            Thread notifier = new Thread(() -> {
+                synchronized (lock) {
+                    ready[0] = true;
+                    lock.notifyAll();
+                }
+            });
+            synchronized (lock) {
+                synchronized (lock) {
+                    notifier.start();
+                    while (!ready[0]) {
+                        lock.wait();
+                    }
+                    assertTrue(Thread.holdsLock(lock));
+                    assertEquals(identity, System.identityHashCode(lock));
+                }
+                assertTrue(Thread.holdsLock(lock));
+            }
+            notifier.join();
+            assertFalse(Thread.holdsLock(lock));
+            assertEquals(identity, System.identityHashCode(lock));
+        }
     }
 
     @Test

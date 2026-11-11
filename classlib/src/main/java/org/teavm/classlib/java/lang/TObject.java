@@ -42,6 +42,9 @@ import org.teavm.runtime.reflect.ClassInfo;
 @Superclass("")
 public class TObject {
     Monitor monitor;
+    // C uses cooperative Java threads. Keep one detached monitor for sequential
+    // uncontended locks without retaining a monitor on every synchronized object.
+    private static Monitor spareMonitor;
 
     static class Monitor {
         Queue<PlatformRunnable> enteringThreads;
@@ -109,7 +112,14 @@ public class TObject {
             o.monitor.id = hashCode;
         } else if (PlatformDetector.isLowLevel()) {
             int hashCode = hashCodeLowLevel(o);
-            o.monitor = new Monitor();
+            if (PlatformDetector.isC() && spareMonitor != null) {
+                Monitor monitor = spareMonitor;
+                spareMonitor = null;
+                monitor.owner = TThread.currentThread();
+                o.monitor = monitor;
+            } else {
+                o.monitor = new Monitor();
+            }
             o.monitor.id = hashCode;
         } else {
             o.monitor = new Monitor();
@@ -202,8 +212,18 @@ public class TObject {
 
     private void deleteMonitor() {
         if (PlatformDetector.isLowLevel()) {
-            int id = monitor.id;
+            Monitor released = monitor;
+            int id = released.id;
             setHashCodeLowLevel(this, id);
+            if (PlatformDetector.isC() && spareMonitor == null) {
+                // isEmptyMonitor has established that there is no owner or waiter.
+                released.enteringThreads = null;
+                released.firstNotifyListener = null;
+                released.lastNotifyListener = null;
+                released.count = 0;
+                released.id = 0;
+                spareMonitor = released;
+            }
         } else if (PlatformDetector.isWebAssemblyGC()) {
             setWasmGCIdentity(monitor.id);
         } else {
