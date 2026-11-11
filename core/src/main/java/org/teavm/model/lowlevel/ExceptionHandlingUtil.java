@@ -58,6 +58,14 @@ public final class ExceptionHandlingUtil {
         return false;
     }
 
+    /** True for an instruction that calls nothing unless it fails, and then only to throw. */
+    public static boolean isCheckInstruction(Instruction insn) {
+        if (insn instanceof NullCheckInstruction || insn instanceof BoundCheckInstruction) {
+            return true;
+        }
+        return insn instanceof CastInstruction && !((CastInstruction) insn).isWeak();
+    }
+
     public static boolean isManagedMethodCall(Characteristics characteristics, MethodReference method) {
         if (characteristics.isManaged(method) || method.equals(FILL_STACK_TRACE)) {
             return true;

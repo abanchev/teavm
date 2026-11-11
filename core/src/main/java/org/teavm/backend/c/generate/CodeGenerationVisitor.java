@@ -109,6 +109,7 @@ import org.teavm.runtime.ExceptionHandling;
 import org.teavm.runtime.RuntimeArray;
 import org.teavm.runtime.RuntimeClass;
 import org.teavm.runtime.RuntimeObject;
+import org.teavm.runtime.ShadowStack;
 
 public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
     public static final MethodReference ALLOC_METHOD = new MethodReference(Allocator.class,
@@ -148,6 +149,7 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
     private List<CallSiteDescriptor> callSites;
     private List<ExceptionHandlerDescriptor> handlers = new ArrayList<>();
     private boolean managed;
+    private boolean hasStackFrame;
     private IdentifiedStatement defaultBreakTarget;
     private IdentifiedStatement defaultContinueTarget;
     private ObjectIntMap<IdentifiedStatement> labelMap = new ObjectIntHashMap<>();
@@ -406,17 +408,13 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
                 writer.print(")");
                 break;
             case NULL_CHECK: {
-                boolean needParenthesis = false;
-                if (needsCallSiteId()) {
-                    needParenthesis = true;
-                    withCallSite();
-                }
-                writer.print("teavm_nullCheck(");
+                boolean atSite = needsCallSiteId();
+                writer.print(atSite ? "teavm_nullCheckAt(" : "teavm_nullCheck(");
                 visitReference(expr.getOperand());
-                writer.print(")");
-                if (needParenthesis) {
-                    writer.print(")");
+                if (atSite) {
+                    writer.print(", TEAVM_CALL_SITE_PTR, ").print(String.valueOf(addCallSite()));
                 }
+                writer.print(")");
                 break;
             }
             case INT_TO_BYTE:
@@ -515,11 +513,15 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
     }
 
     private boolean needsCallSiteId() {
-        return managed;
+        return managed && hasStackFrame;
     }
 
     @Override
     public void visit(InvocationExpr expr) {
+        if (expr.getMethod().getName().equals("allocStack")
+                && expr.getMethod().getClassName().equals(ShadowStack.class.getName())) {
+            hasStackFrame = true;
+        }
         ClassReader cls = context.getClassSource().get(expr.getMethod().getClassName());
         if (cls != null) {
             InteropUtil.processInclude(cls.getAnnotations(), includes);
@@ -577,6 +579,10 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
     }
 
     private void withCallSite() {
+        writer.print("TEAVM_WITH_CALL_SITE_ID(").print(String.valueOf(addCallSite())).print(", ");
+    }
+
+    private int addCallSite() {
         LocationStackEntry locationEntry = locationStack.peek();
         TextLocation location = locationEntry != null ? locationEntry.location : null;
         CallSiteLocation[] callSiteLocations = CallSiteLocation.fromTextLocation(location, callingMethod);
@@ -585,8 +591,7 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
         Collections.reverse(reverseHandlers);
         callSite.getHandlers().addAll(reverseHandlers);
         callSites.add(callSite);
-
-        writer.print("TEAVM_WITH_CALL_SITE_ID(").print(String.valueOf(callSite.getId())).print(", ");
+        return callSite.getId();
     }
 
     private void generateCallToConstructor(MethodReference reference, List<? extends Expr> arguments) {
@@ -1587,12 +1592,6 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
             return;
         }
 
-        boolean needParenthesis = false;
-        if (needsCallSiteId()) {
-            needParenthesis = true;
-            withCallSite();
-        }
-
         String functionName;
         if (expr.getArray() == null) {
             functionName = "teavm_checkLowerBound";
@@ -1602,17 +1601,18 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
             functionName = "teavm_checkBounds";
         }
 
+        boolean atSite = needsCallSiteId();
         writer.print(functionName);
-        writer.print("(");
+        writer.print(atSite ? "At(" : "(");
         expr.getIndex().acceptVisitor(this);
         if (expr.getArray() != null) {
             writer.print(", ");
             visitReference(expr.getArray());
         }
-        writer.print(")");
-        if (needParenthesis) {
-            writer.print(")");
+        if (atSite) {
+            writer.print(", TEAVM_CALL_SITE_PTR, ").print(String.valueOf(addCallSite()));
         }
+        writer.print(")");
     }
 
     private IntrinsicContext intrinsicContext = new IntrinsicContext() {
