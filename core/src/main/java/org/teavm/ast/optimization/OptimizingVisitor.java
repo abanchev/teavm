@@ -1382,10 +1382,51 @@ class OptimizingVisitor implements StatementVisitor, ExprVisitor {
         List<Statement> statements = processSequence(statement.getProtectedBody());
         statement.getProtectedBody().clear();
         statement.getProtectedBody().addAll(statements);
+        // Register allocation can leave protected regions containing only local copies.
+        // No exception can reach their handler. Side-effect freedom is insufficient here:
+        // field/array reads, casts and even pure calls can still throw.
+        if (isNonThrowingSequence(statements)) {
+            SequentialStatement sequence = new SequentialStatement();
+            sequence.getSequence().addAll(statements);
+            resultStmt = sequence;
+            return;
+        }
         statements = processSequence(statement.getHandler());
         statement.getHandler().clear();
         statement.getHandler().addAll(statements);
         resultStmt = statement;
+    }
+
+    private boolean isNonThrowingSequence(List<Statement> statements) {
+        for (Statement statement : statements) {
+            if (statement instanceof AssignmentStatement) {
+                AssignmentStatement assignment = (AssignmentStatement) statement;
+                if (!(assignment.getLeftValue() instanceof VariableExpr)
+                        || !isNonThrowingValue(assignment.getRightValue())) {
+                    return false;
+                }
+            } else if (statement instanceof ReturnStatement) {
+                Expr value = ((ReturnStatement) statement).getResult();
+                if (value != null && !isNonThrowingValue(value)) {
+                    return false;
+                }
+            } else if (!(statement instanceof BreakStatement) && !(statement instanceof ContinueStatement)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isNonThrowingValue(Expr expr) {
+        if (expr instanceof VariableExpr) {
+            return true;
+        }
+        if (expr instanceof ConstantExpr) {
+            Object value = ((ConstantExpr) expr).getValue();
+            // Do not assume that class/string constant resolution is just a local read.
+            return value == null || value instanceof Number;
+        }
+        return false;
     }
 
     @Override
