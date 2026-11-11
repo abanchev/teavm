@@ -60,6 +60,43 @@
         return o;
     }
 
+    // The At forms record the call site only when they throw, so a passing check writes nothing.
+    inline static void* teavm_nullCheckAt(void* o, int32_t* site, int32_t id) {
+        if (o == NULL) {
+            *site = id;
+            teavm_throwNullPointerException();
+            TEAVM_UNREACHABLE
+        }
+        return o;
+    }
+
+    inline static int32_t teavm_checkBoundsAt(int32_t index, void* array, int32_t* site, int32_t id) {
+        if ((uint32_t) index >= (uint32_t) TEAVM_ARRAY_LENGTH(array)) {
+            *site = id;
+            teavm_throwArrayIndexOutOfBoundsException();
+            TEAVM_UNREACHABLE
+        }
+        return index;
+    }
+
+    inline static int32_t teavm_checkLowerBoundAt(int32_t index, int32_t* site, int32_t id) {
+        if (index < 0) {
+            *site = id;
+            teavm_throwArrayIndexOutOfBoundsException();
+            TEAVM_UNREACHABLE
+        }
+        return index;
+    }
+
+    inline static int32_t teavm_checkUpperBoundAt(int32_t index, void* array, int32_t* site, int32_t id) {
+        if (index >= TEAVM_ARRAY_LENGTH(array)) {
+            *site = id;
+            teavm_throwArrayIndexOutOfBoundsException();
+            TEAVM_UNREACHABLE
+        }
+        return index;
+    }
+
     inline static int32_t teavm_checkBounds(int32_t index, void* array) {
         if (index < 0 || index >= TEAVM_ARRAY_LENGTH(array)) {
             teavm_throwArrayIndexOutOfBoundsException();

@@ -418,15 +418,36 @@ public class CTarget implements TeaVMTarget, TeaVMCHost {
 
     @Override
     public void beforeInlining(Program program, MethodReader method) {
-        nullCheckInsertion.transformProgram(program, method.getReference());
+        if (!isUnchecked(method.getReference())) {
+            nullCheckInsertion.transformProgram(program, method.getReference());
+        }
     }
 
     @Override
     public void beforeOptimizations(Program program, MethodReader method) {
-        boundCheckInsertion.transformProgram(program, method.getReference());
-        if (strict) {
+        // With teavm.c.uncheckedBounds, an array access past the end corrupts memory instead of throwing.
+        if (!isUnchecked(method.getReference())
+                && !"true".equals(controller.getProperties().getProperty("teavm.c.uncheckedBounds"))) {
+            boundCheckInsertion.transformProgram(program, method.getReference());
+        }
+        if (strict && !isUnchecked(method.getReference())) {
             divisionCheckInsertion.transformProgram(program, method.getReference());
         }
+    }
+
+    // Classes named by this comma-separated list of name prefixes get no null or bound checks: a bad access there
+    // corrupts memory or crashes instead of throwing. Only for code that never relies on those exceptions.
+    private boolean isUnchecked(MethodReference method) {
+        var prefixes = controller.getProperties().getProperty("teavm.c.uncheckedClasses", "");
+        if (prefixes.isEmpty()) {
+            return false;
+        }
+        for (var prefix : prefixes.split(",")) {
+            if (method.getClassName().startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
