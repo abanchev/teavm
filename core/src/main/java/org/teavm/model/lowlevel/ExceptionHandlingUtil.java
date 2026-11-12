@@ -15,8 +15,17 @@
  */
 package org.teavm.model.lowlevel;
 
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.DoubleBuffer;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.nio.LongBuffer;
+import java.nio.ShortBuffer;
+import java.util.Set;
 import org.teavm.model.Instruction;
 import org.teavm.model.MethodReference;
+import org.teavm.model.ValueType;
 import org.teavm.model.instructions.BinaryInstruction;
 import org.teavm.model.instructions.BinaryOperation;
 import org.teavm.model.instructions.BoundCheckInstruction;
@@ -36,6 +45,9 @@ import org.teavm.runtime.ExceptionHandling;
 public final class ExceptionHandlingUtil {
     private static final MethodReference FILL_STACK_TRACE = new MethodReference(ExceptionHandling.class,
             "fillStackTrace", StackTraceElement[].class);
+    private static final Set<String> BUFFER_TYPES = Set.of(ByteBuffer.class.getName(), ShortBuffer.class.getName(),
+            CharBuffer.class.getName(), IntBuffer.class.getName(), LongBuffer.class.getName(),
+            FloatBuffer.class.getName(), DoubleBuffer.class.getName());
 
     private ExceptionHandlingUtil() {
     }
@@ -53,7 +65,18 @@ public final class ExceptionHandlingUtil {
             var op = ((BinaryInstruction) insn).getOperation();
             return op == BinaryOperation.DIVIDE_CHECKED || op == BinaryOperation.MODULO_CHECKED;
         } else if (insn instanceof InvokeInstruction) {
-            return isManagedMethodCall(characteristics, ((InvokeInstruction) insn).getMethod());
+            var method = ((InvokeInstruction) insn).getMethod();
+            return isManagedMethodCall(characteristics, method) || takesBuffer(method);
+        }
+        return false;
+    }
+
+    // The C backend gets the address of a buffer argument with a managed call.
+    private static boolean takesBuffer(MethodReference method) {
+        for (var type : method.getParameterTypes()) {
+            if (type instanceof ValueType.Object && BUFFER_TYPES.contains(((ValueType.Object) type).getClassName())) {
+                return true;
+            }
         }
         return false;
     }

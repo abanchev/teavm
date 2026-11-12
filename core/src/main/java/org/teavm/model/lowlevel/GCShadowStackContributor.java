@@ -62,6 +62,8 @@ import org.teavm.runtime.ShadowStack;
 public class GCShadowStackContributor {
     private Characteristics characteristics;
     private NativePointerFinder nativePointerFinder;
+    // A check that is not a call site can reach the GC before the first root is stored.
+    private boolean hasUnrootedCheck;
 
     public GCShadowStackContributor(Characteristics characteristics) {
         this.characteristics = characteristics;
@@ -69,6 +71,7 @@ public class GCShadowStackContributor {
     }
 
     public int contribute(Program program, MethodReader method) {
+        hasUnrootedCheck = false;
         ProgramUtils.removeDeadPhis(program);
         completePartialPhis(program, method);
         List<Map<Instruction, BitSet>> liveInInformation = findCallSiteLiveIns(program, method);
@@ -107,7 +110,9 @@ public class GCShadowStackContributor {
         List<Map<Instruction, int[]>> liveInStores = reduceGCRootStores(dom, program, usedColors, liveInInformation,
                 colors, autoSpilled, variableClasses);
         putLiveInGCRoots(program, liveInStores);
-        clearSlots(program, usedColors);
+        if (hasUnrootedCheck) {
+            clearSlots(program, usedColors);
+        }
 
         return usedColors;
     }
@@ -225,8 +230,9 @@ public class GCShadowStackContributor {
                 for (Variable definedVar : defExtractor.getDefinedVariables()) {
                     currentLiveOut.clear(definedVar.getIndex());
                 }
-                if (ExceptionHandlingUtil.isCallInstruction(characteristics, insn)
-                        && !(ExceptionHandlingUtil.isCheckInstruction(insn) && block.getTryCatchBlocks().isEmpty())) {
+                if (ExceptionHandlingUtil.isCheckInstruction(insn) && block.getTryCatchBlocks().isEmpty()) {
+                    hasUnrootedCheck = true;
+                } else if (ExceptionHandlingUtil.isCallInstruction(characteristics, insn)) {
                     BitSet csLiveIn = (BitSet) currentLiveOut.clone();
                     for (int v = csLiveIn.nextSetBit(0); v >= 0; v = csLiveIn.nextSetBit(v + 1)) {
                         if (!isReference(typeInferer, v) || nativePointers[v] || constants.get(v)) {
@@ -302,9 +308,8 @@ public class GCShadowStackContributor {
 
         Step[] stack = new Step[program.basicBlockCount() * 2];
         int head = 0;
-        // A failing check can reach the GC before the first call site, so every slot starts out null.
         Step start = new Step(0);
-        Arrays.fill(start.slotStates, -1);
+        Arrays.fill(start.slotStates, hasUnrootedCheck ? -1 : program.variableCount());
         stack[head++] = start;
 
         while (head > 0) {

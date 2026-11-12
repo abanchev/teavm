@@ -16,13 +16,18 @@
 package org.teavm.vm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import java.lang.ref.WeakReference;
 import org.junit.jupiter.api.Test;
 import org.teavm.junit.EachTestCompiledSeparately;
+import org.teavm.junit.OnlyPlatform;
+import org.teavm.junit.SkipJVM;
 import org.teavm.junit.TeaVMTest;
+import org.teavm.junit.TestPlatform;
 
 /** Failing null, bound and cast checks, with the collector running while their exceptions are allocated. */
 @TeaVMTest
@@ -30,6 +35,8 @@ import org.teavm.junit.TeaVMTest;
 public class CheckInstructionExceptionTest {
     private static final int GC_ROUNDS = 200000;
     private static Object sink;
+    private static Holder pending;
+    private static WeakReference<Holder> pendingRef;
 
     private static final class Holder {
         final int value;
@@ -41,14 +48,54 @@ public class CheckInstructionExceptionTest {
         }
     }
 
+    // Two implementations of each, so that the calls are virtual and not inlined into the tests.
     private abstract static class Reader {
         abstract int read(int[] array, int index);
+
+        abstract int length(Object value, int extra);
+
+        abstract int failsBeforeFirstRoot(int[] array, int index);
+
+        abstract int failsWithLiveLocals(Holder kept, int[] array, int index);
+
+        abstract void storePending(int value);
     }
 
     private static final class Plain extends Reader {
         @Override
         int read(int[] array, int index) {
             return array[index];
+        }
+
+        @Override
+        int length(Object value, int extra) {
+            return ((int[]) value).length + extra;
+        }
+
+        // The check fails before this method has stored any root, so the collector must find its slots clear.
+        @Override
+        int failsBeforeFirstRoot(int[] array, int index) {
+            var value = array[index];
+            var holder = new Holder(value);
+            sink = holder;
+            var other = new Holder(value + 1);
+            sink = other;
+            return holder.value + other.value;
+        }
+
+        // The locals are dead once the check throws, so their slots are not refreshed before it.
+        @Override
+        int failsWithLiveLocals(Holder kept, int[] array, int index) {
+            var first = new Holder(index);
+            var second = new Holder(index + 1);
+            var read = array[index];
+            return read + first.data[1] + second.data[0] + kept.value;
+        }
+
+        @Override
+        void storePending(int value) {
+            pending = new Holder(value);
+            pendingRef = new WeakReference<>(pending);
         }
     }
 
@@ -57,9 +104,57 @@ public class CheckInstructionExceptionTest {
         int read(int[] array, int index) {
             return array[index + 1] + array[index];
         }
+
+        @Override
+        int length(Object value, int extra) {
+            return ((int[]) value).length * 2 + extra;
+        }
+
+        @Override
+        int failsBeforeFirstRoot(int[] array, int index) {
+            var value = array[index];
+            var holder = new Holder(value * 2);
+            sink = holder;
+            var other = new Holder(value + 2);
+            sink = other;
+            return holder.value + other.value - 1;
+        }
+
+        @Override
+        int failsWithLiveLocals(Holder kept, int[] array, int index) {
+            var first = new Holder(index);
+            var second = new Holder(index + 1);
+            var read = array[index];
+            return read + first.data[0] + second.data[1] + kept.value;
+        }
+
+        @Override
+        void storePending(int value) {
+            sink = null;
+            pending = new Holder(value);
+            pendingRef = new WeakReference<>(pending);
+        }
+    }
+
+    private static final class Counter {
+        int count;
+
+        synchronized int read(int[] array, int index) {
+            ++count;
+            return array[index];
+        }
     }
 
     private static final Reader[] READERS = { new Plain(), new Offset() };
+
+    private static void assertTraceHas(Throwable e, String methodName) {
+        for (var element : e.getStackTrace()) {
+            if (methodName.equals(element.getMethodName())) {
+                return;
+            }
+        }
+        fail("No " + methodName + " in the stack trace");
+    }
 
     @Test
     public void boundCheckInCallWithoutFrameReachesCallersHandler() {
@@ -94,29 +189,18 @@ public class CheckInstructionExceptionTest {
         }
     }
 
-    private static int castLength(Object value, int extra) {
-        return ((int[]) value).length + extra;
-    }
-
     @Test
     public void castFailureReachesCallersHandler() {
-        assertEquals(5, castLength(new int[3], 2));
-        try {
-            castLength("string", 2);
-            fail();
-        } catch (ClassCastException e) {
-            // expected
+        assertEquals(5, READERS[0].length(new int[3], 2));
+        assertEquals(8, READERS[1].length(new int[3], 2));
+        for (var reader : READERS) {
+            try {
+                reader.length("string", 2);
+                fail();
+            } catch (ClassCastException e) {
+                // expected
+            }
         }
-    }
-
-    // The check fails before this method has stored any root, so the collector must find its slots clear.
-    private static int failsBeforeFirstRoot(int[] array, int index) {
-        var value = array[index];
-        var holder = new Holder(value);
-        sink = holder;
-        var other = new Holder(value + 1);
-        sink = other;
-        return holder.value + other.value;
     }
 
     @Test
@@ -125,21 +209,14 @@ public class CheckInstructionExceptionTest {
         var caught = 0;
         for (var i = 0; i < GC_ROUNDS; ++i) {
             try {
-                failsBeforeFirstRoot(array, 4 + (i & 1023));
+                READERS[i & 1].failsBeforeFirstRoot(array, 4 + (i & 1023));
             } catch (ArrayIndexOutOfBoundsException e) {
                 ++caught;
             }
         }
         assertEquals(GC_ROUNDS, caught);
-        assertEquals(1, failsBeforeFirstRoot(array, 0));
-    }
-
-    // The locals are dead once the check throws, so their slots are not refreshed before it.
-    private static int failsWithLiveLocals(Holder kept, int[] array, int index) {
-        var first = new Holder(index);
-        var second = new Holder(index + 1);
-        var read = array[index];
-        return read + first.data[1] + second.data[0] + kept.value;
+        assertEquals(1, READERS[0].failsBeforeFirstRoot(array, 0));
+        assertEquals(1, READERS[1].failsBeforeFirstRoot(array, 0));
     }
 
     @Test
@@ -151,7 +228,7 @@ public class CheckInstructionExceptionTest {
         for (var i = 0; i < GC_ROUNDS / 4; ++i) {
             var index = i & 7;
             try {
-                total += failsWithLiveLocals(kept, array, index);
+                total += READERS[i & 1].failsWithLiveLocals(kept, array, index);
             } catch (ArrayIndexOutOfBoundsException e) {
                 ++caught;
             }
@@ -181,20 +258,95 @@ public class CheckInstructionExceptionTest {
         }
     }
 
+    // The holder is read from a field after the call that stored it, so only the failing check makes it a root.
+    @Test
+    public void referenceReadBeforeCheckInTrySurvivesCollection() {
+        var array = new int[4];
+        for (var i = 0; i < GC_ROUNDS; ++i) {
+            READERS[i & 1].storePending(i);
+            Holder holder = null;
+            try {
+                holder = pending;
+                pending = null;
+                array[holder.value + 4] = 1;
+            } catch (ArrayIndexOutOfBoundsException e) {
+                // Cleared if the collector ran during the throw without seeing the holder.
+                assertSame(holder, pendingRef.get());
+                assertEquals(i, holder.value);
+                assertEquals(i + 1, holder.data[1]);
+            }
+        }
+    }
+
     @Test
     public void synchronizedMethodReleasesMonitorOnFailedCheck() {
-        var lock = new Object();
+        var counter = new Counter();
         var array = new int[1];
         for (var i = 0; i < 1000; ++i) {
             try {
-                synchronized (lock) {
-                    array[i + 1] = 1;
-                }
+                counter.read(array, i + 1);
                 fail();
             } catch (ArrayIndexOutOfBoundsException e) {
-                synchronized (lock) {
-                    assertSame(lock, lock);
-                }
+                assertFalse(Thread.holdsLock(counter));
+            }
+        }
+        assertEquals(1000, counter.count);
+    }
+
+    // Skipped on the JVM, which leaves out the stack trace of an implicit exception thrown often from one place.
+    @Test
+    @OnlyPlatform(TestPlatform.C)
+    @SkipJVM
+    public void stackTraceOfFailedBoundCheck() {
+        var thrown = false;
+        try {
+            READERS[0].read(new int[1], 3);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            thrown = true;
+            assertTraceHas(e, "stackTraceOfFailedBoundCheck");
+        }
+        assertTrue(thrown);
+    }
+
+    @Test
+    @OnlyPlatform(TestPlatform.C)
+    @SkipJVM
+    public void stackTraceOfFailedNullCheck() {
+        var thrown = false;
+        try {
+            READERS[0].read(null, 0);
+        } catch (NullPointerException e) {
+            thrown = true;
+            assertTraceHas(e, "stackTraceOfFailedNullCheck");
+        }
+        assertTrue(thrown);
+    }
+
+    @Test
+    @OnlyPlatform(TestPlatform.C)
+    @SkipJVM
+    public void stackTraceOfFailedCast() {
+        var thrown = false;
+        try {
+            READERS[1].length("string", 2);
+        } catch (ClassCastException e) {
+            thrown = true;
+            assertTraceHas(e, "stackTraceOfFailedCast");
+        }
+        assertTrue(thrown);
+    }
+
+    @Test
+    @OnlyPlatform(TestPlatform.C)
+    @SkipJVM
+    public void stackTracesSurviveCollection() {
+        var array = new int[4];
+        for (var i = 0; i < GC_ROUNDS / 4; ++i) {
+            try {
+                READERS[i & 1].read(array, 4 + (i & 1023));
+            } catch (ArrayIndexOutOfBoundsException e) {
+                sink = new int[8];
+                assertTraceHas(e, "stackTracesSurviveCollection");
             }
         }
     }
@@ -206,36 +358,6 @@ public class CheckInstructionExceptionTest {
         } catch (ArrayIndexOutOfBoundsException e) {
             assertNotNull(e.getStackTrace());
         }
-    }
-
-    // No fail() in the try bodies below: code it reaches throws exceptions of its own, which hid this crash for
-    // null checks. The analysis must learn from the failing check alone that the exception reaches the handler.
-    @Test
-    public void stackTraceOfFailedBoundCheck() {
-        var thrown = false;
-        try {
-            READERS[0].read(new int[1], 3);
-        } catch (ArrayIndexOutOfBoundsException e) {
-            thrown = true;
-            for (var element : e.getStackTrace()) {
-                assertNotNull(element.getMethodName());
-            }
-        }
-        assertTrue(thrown);
-    }
-
-    @Test
-    public void stackTraceOfFailedNullCheck() {
-        var thrown = false;
-        try {
-            READERS[0].read(null, 0);
-        } catch (NullPointerException e) {
-            thrown = true;
-            for (var element : e.getStackTrace()) {
-                assertNotNull(element.getMethodName());
-            }
-        }
-        assertTrue(thrown);
     }
 
     @Test
@@ -250,33 +372,6 @@ public class CheckInstructionExceptionTest {
             assertEquals(null, e.getCause());
         }
         assertTrue(thrown);
-    }
-
-    @Test
-    public void stackTraceOfFailedCast() {
-        try {
-            castLength("string", 2);
-            fail();
-        } catch (ClassCastException e) {
-            for (var element : e.getStackTrace()) {
-                assertNotNull(element.getMethodName());
-            }
-        }
-    }
-
-    @Test
-    public void stackTracesSurviveCollection() {
-        var array = new int[4];
-        for (var i = 0; i < GC_ROUNDS / 4; ++i) {
-            try {
-                READERS[i & 1].read(array, 4 + (i & 1023));
-            } catch (ArrayIndexOutOfBoundsException e) {
-                sink = new int[8];
-                for (var element : e.getStackTrace()) {
-                    assertNotNull(element.getMethodName());
-                }
-            }
-        }
     }
 
     @Test

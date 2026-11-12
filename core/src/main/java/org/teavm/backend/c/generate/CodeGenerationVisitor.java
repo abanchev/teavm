@@ -109,7 +109,6 @@ import org.teavm.runtime.ExceptionHandling;
 import org.teavm.runtime.RuntimeArray;
 import org.teavm.runtime.RuntimeClass;
 import org.teavm.runtime.RuntimeObject;
-import org.teavm.runtime.ShadowStack;
 
 public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
     public static final MethodReference ALLOC_METHOD = new MethodReference(Allocator.class,
@@ -189,6 +188,10 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
 
     public IntContainer getSpilledVariables() {
         return spilledVariables;
+    }
+
+    public void setHasStackFrame(boolean hasStackFrame) {
+        this.hasStackFrame = hasStackFrame;
     }
 
     public void setCallingMethod(MethodReference callingMethod) {
@@ -518,10 +521,6 @@ public class CodeGenerationVisitor implements ExprVisitor, StatementVisitor {
 
     @Override
     public void visit(InvocationExpr expr) {
-        if (expr.getMethod().getName().equals("allocStack")
-                && expr.getMethod().getClassName().equals(ShadowStack.class.getName())) {
-            hasStackFrame = true;
-        }
         ClassReader cls = context.getClassSource().get(expr.getMethod().getClassName());
         if (cls != null) {
             InteropUtil.processInclude(cls.getAnnotations(), includes);

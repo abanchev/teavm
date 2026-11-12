@@ -17,8 +17,11 @@ package org.teavm.backend.c.generate;
 
 import com.carrotsearch.hppc.IntContainer;
 import java.util.List;
+import org.teavm.ast.InvocationExpr;
 import org.teavm.ast.MethodNode;
+import org.teavm.ast.RecursiveVisitor;
 import org.teavm.ast.RegularMethodNode;
+import org.teavm.ast.Statement;
 import org.teavm.ast.VariableNode;
 import org.teavm.backend.c.analyze.VolatileDefinitionFinder;
 import org.teavm.backend.lowlevel.generate.NameProvider;
@@ -26,8 +29,11 @@ import org.teavm.model.ElementModifier;
 import org.teavm.model.MethodDescriptor;
 import org.teavm.model.MethodReference;
 import org.teavm.model.lowlevel.CallSiteDescriptor;
+import org.teavm.runtime.ShadowStack;
 
 public class CodeGenerator {
+    private static final MethodReference ALLOC_STACK = new MethodReference(ShadowStack.class, "allocStack",
+            int.class, void.class);
     private GenerationContext context;
     private ClassGenerationContext classContext;
     private CodeWriter writer;
@@ -72,8 +78,28 @@ public class CodeGenerator {
                 volatileDefinitions);
         visitor.setAsync(context.isAsync(methodNode.getReference()));
         visitor.setCallingMethod(methodNode.getReference());
+        visitor.setHasStackFrame(allocatesStack(methodNode.getBody()));
         methodNode.getBody().acceptVisitor(visitor);
         return visitor;
+    }
+
+    private static boolean allocatesStack(Statement body) {
+        var finder = new RecursiveVisitor() {
+            @Override
+            public void visit(InvocationExpr expr) {
+                if (expr.getMethod().equals(ALLOC_STACK)) {
+                    cancel();
+                } else {
+                    super.visit(expr);
+                }
+            }
+
+            boolean found() {
+                return canceled;
+            }
+        };
+        body.acceptVisitor(finder);
+        return finder.found();
     }
 
     public static void generateMethodSignature(CodeWriter writer, NameProvider names,
