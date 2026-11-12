@@ -112,15 +112,15 @@ public class TObject {
             o.monitor.id = hashCode;
         } else if (PlatformDetector.isLowLevel()) {
             int hashCode = hashCodeLowLevel(o);
-            if (PlatformDetector.isC() && spareMonitor != null) {
-                Monitor monitor = spareMonitor;
+            Monitor monitor = spareMonitor;
+            if (monitor != null) {
                 spareMonitor = null;
                 monitor.owner = TThread.currentThread();
-                o.monitor = monitor;
             } else {
-                o.monitor = new Monitor();
+                monitor = new Monitor();
             }
-            o.monitor.id = hashCode;
+            monitor.id = hashCode;
+            o.monitor = monitor;
         } else {
             o.monitor = new Monitor();
         }
@@ -215,13 +215,8 @@ public class TObject {
             Monitor released = monitor;
             int id = released.id;
             setHashCodeLowLevel(this, id);
-            if (PlatformDetector.isC() && spareMonitor == null) {
-                // isEmptyMonitor has established that there is no owner or waiter.
-                released.enteringThreads = null;
-                released.firstNotifyListener = null;
-                released.lastNotifyListener = null;
-                released.count = 0;
-                released.id = 0;
+            // isEmptyMonitor found no owner, so count is zero, and no waiters; createMonitor sets owner and id.
+            if (spareMonitor == null) {
                 spareMonitor = released;
             }
         } else if (PlatformDetector.isWebAssemblyGC()) {

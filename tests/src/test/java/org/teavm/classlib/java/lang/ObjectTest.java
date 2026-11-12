@@ -119,6 +119,8 @@ public class ObjectTest {
         for (int i = 0; i < locks.length; i++) {
             identities[i] = System.identityHashCode(locks[i]);
         }
+        Object inner = new Object();
+        int innerIdentity = System.identityHashCode(inner);
         for (int pass = 0; pass < 20; pass++) {
             for (int i = 0; i < locks.length; i++) {
                 Object lock = locks[i];
@@ -128,15 +130,17 @@ public class ObjectTest {
                         assertTrue(Thread.holdsLock(lock));
                         assertEquals(identities[i], System.identityHashCode(lock));
                     }
-                    synchronized (locks[(i + 1) % locks.length]) {
+                    synchronized (inner) {
                         assertTrue(Thread.holdsLock(lock));
+                        assertEquals(innerIdentity, System.identityHashCode(inner));
                     }
                     assertTrue(Thread.holdsLock(lock));
                 }
                 assertFalse(Thread.holdsLock(lock));
                 assertEquals(identities[i], System.identityHashCode(lock));
+                assertEquals(innerIdentity, System.identityHashCode(inner));
             }
-            // A detached reusable monitor must remain valid across relocation.
+            // Collect while a deleted monitor is kept for reuse.
             System.gc();
         }
     }
@@ -145,14 +149,27 @@ public class ObjectTest {
     @AsyncEnabled
     public void repeatedWaitNotifyPreservesReentrantLock() throws InterruptedException {
         Object lock = new Object();
-        boolean[] ready = new boolean[1];
+        Object other = new Object();
+        boolean[] ready = new boolean[2];
         int identity = System.identityHashCode(lock);
+        int otherIdentity = System.identityHashCode(other);
         for (int i = 0; i < 4; i++) {
             ready[0] = false;
+            ready[1] = false;
+            boolean otherFirst = i % 2 == 1;
             Thread notifier = new Thread(() -> {
+                // Locked while the monitor of lock has a waiter; otherwise only after it has been deleted.
+                if (otherFirst) {
+                    synchronized (other) {
+                        assertTrue(Thread.holdsLock(other));
+                    }
+                }
                 synchronized (lock) {
                     ready[0] = true;
                     lock.notifyAll();
+                }
+                synchronized (other) {
+                    ready[1] = true;
                 }
             });
             synchronized (lock) {
@@ -167,8 +184,11 @@ public class ObjectTest {
                 assertTrue(Thread.holdsLock(lock));
             }
             notifier.join();
+            assertTrue(ready[1]);
             assertFalse(Thread.holdsLock(lock));
+            assertFalse(Thread.holdsLock(other));
             assertEquals(identity, System.identityHashCode(lock));
+            assertEquals(otherIdentity, System.identityHashCode(other));
         }
     }
 
