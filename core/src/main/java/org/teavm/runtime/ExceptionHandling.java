@@ -152,7 +152,7 @@ public final class ExceptionHandling {
         }
     }
 
-    // Managed, so a collection during the constructor moves the new exception together with its root.
+    // These four are managed, so a collection during the constructor moves the new exception together with its root.
     public static void throwClassCastException() {
         throwException(new ClassCastException());
     }
@@ -167,7 +167,6 @@ public final class ExceptionHandling {
         throwException(new ArrayIndexOutOfBoundsException());
     }
 
-    @Unmanaged
     @Export(name = "teavm_throwArithmeticException")
     public static void throwArithmeticException() {
         throwException(new ArithmeticException());
