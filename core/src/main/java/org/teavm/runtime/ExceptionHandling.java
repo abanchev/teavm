@@ -179,9 +179,9 @@ public final class ExceptionHandling {
         while (stackFrame != null) {
             int callSiteId = ShadowStack.getCallSiteId(stackFrame);
             if (callSiteId >= 0) {
-                CallSite callSite = findCallSiteById(callSiteId, stackFrame);
-                CallSiteLocation location = callSite.location;
-                if (isObfuscated() || location == null) {
+                CallSiteLocation location = isObfuscated() ? null
+                        : findCallSiteById(callSiteId, stackFrame).location;
+                if (location == null) {
                     size++;
                 } else {
                     while (location != null) {
@@ -211,27 +211,28 @@ public final class ExceptionHandling {
         while (stackFrame != null) {
             int callSiteId = ShadowStack.getCallSiteId(stackFrame);
             if (callSiteId >= 0) {
-                CallSite callSite = findCallSiteById(callSiteId, stackFrame);
-                CallSiteLocation location = callSite.location;
                 if (isObfuscated()) {
                     target[index++] = new StackTraceElement("Obfuscated", "obfuscated", "Obfuscated.java", callSiteId);
-                } else if (location == null) {
-                    target[index++] = new StackTraceElement("", "", null, -1);
                 } else {
-                    while (location != null) {
-                        MethodLocation methodLocation = location.method;
-                        StackTraceElement element;
-                        if (methodLocation != null) {
-                            element = new StackTraceElement(
-                                    methodLocation.className != null ? methodLocation.className.value : "",
-                                    methodLocation.methodName != null ? methodLocation.methodName.value : "",
-                                    methodLocation.fileName != null ? methodLocation.fileName.value : null,
-                                    location.lineNumber);
-                        } else {
-                            element = new StackTraceElement("", "", null, location.lineNumber);
+                    CallSiteLocation location = findCallSiteById(callSiteId, stackFrame).location;
+                    if (location == null) {
+                        target[index++] = new StackTraceElement("", "", null, -1);
+                    } else {
+                        while (location != null) {
+                            MethodLocation methodLocation = location.method;
+                            StackTraceElement element;
+                            if (methodLocation != null) {
+                                element = new StackTraceElement(
+                                        methodLocation.className != null ? methodLocation.className.value : "",
+                                        methodLocation.methodName != null ? methodLocation.methodName.value : "",
+                                        methodLocation.fileName != null ? methodLocation.fileName.value : null,
+                                        location.lineNumber);
+                            } else {
+                                element = new StackTraceElement("", "", null, location.lineNumber);
+                            }
+                            target[index++] = element;
+                            location = location.next;
                         }
-                        target[index++] = element;
-                        location = location.next;
                     }
                 }
             }
